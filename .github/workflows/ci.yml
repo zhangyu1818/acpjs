@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # The @acpjs/electron suite includes a real E2E that spawns Electron and
+      # opens BrowserWindows; on a headless Linux runner this needs a virtual
+      # X server. xvfb-run wraps only the test step so the rest stays native.
+      - name: Test
+        run: xvfb-run --auto-servernum pnpm test
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Check deps
+        run: pnpm check:deps
+
+      - name: Check publish (publint + attw)
+        run: pnpm check:publish

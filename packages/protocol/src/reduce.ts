@@ -1,0 +1,253 @@
+import { truncateUtf8Tail } from './terminal-output'
+
+import type { ContentChunk, ToolCallUpdate } from '@agentclientprotocol/sdk'
+
+import type { AcpEvent } from './events'
+import type {
+  MessageKind,
+  ResolvedPermissionRequest,
+  SessionState,
+} from './state'
+
+function appendChunk(
+  state: SessionState,
+  kind: MessageKind,
+  payload: Omit<ContentChunk, '_meta'>,
+  seq: number,
+): SessionState {
+  const messageId = payload.messageId ?? null
+  const messages = state.messages
+  let target = -1
+  if (messageId !== null) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]
+      if (message?.kind === kind && message.messageId === messageId) {
+        target = index
+        break
+      }
+    }
+  } else {
+    const last = messages[messages.length - 1]
+    if (last?.kind === kind && last.messageId === null) {
+      target = messages.length - 1
+    }
+  }
+  if (target === -1) {
+    return {
+      ...state,
+      messages: [
+        ...messages,
+        { kind, messageId, content: [payload.content], seq },
+      ],
+    }
+  }
+  return {
+    ...state,
+    messages: messages.map((message, index) =>
+      index === target
+        ? { ...message, content: [...message.content, payload.content] }
+        : message,
+    ),
+  }
+}
+
+export function reduce(state: SessionState, event: AcpEvent): SessionState {
+  switch (event.type) {
+    case 'user-message-chunk': {
+      return appendChunk(state, 'user', event.payload, event.seq)
+    }
+    case 'agent-message-chunk': {
+      return appendChunk(state, 'agent', event.payload, event.seq)
+    }
+    case 'agent-thought-chunk': {
+      return appendChunk(state, 'thought', event.payload, event.seq)
+    }
+    case 'tool-call': {
+      const payload = event.payload
+      return {
+        ...state,
+        toolCalls: {
+          ...state.toolCalls,
+          [payload.toolCallId]: {
+            toolCallId: payload.toolCallId,
+            title: payload.title,
+            kind: payload.kind ?? null,
+            status: payload.status ?? null,
+            content: payload.content ?? [],
+            locations: payload.locations ?? [],
+            rawInput: payload.rawInput,
+            rawOutput: payload.rawOutput,
+            seq: event.seq,
+          },
+        },
+      }
+    }
+    case 'tool-call-update': {
+      const payload = event.payload
+      const existing = state.toolCalls[payload.toolCallId]
+      if (!existing) return state
+      const next = { ...existing }
+      if (payload.title != null) next.title = payload.title
+      if (payload.kind != null) next.kind = payload.kind
+      if (payload.status != null) next.status = payload.status
+      if (payload.content != null) next.content = payload.content
+      if (payload.locations != null) next.locations = payload.locations
+      if ('rawInput' in payload) next.rawInput = payload.rawInput
+      if ('rawOutput' in payload) next.rawOutput = payload.rawOutput
+      return {
+        ...state,
+        toolCalls: { ...state.toolCalls, [payload.toolCallId]: next },
+      }
+    }
+    case 'plan': {
+      return { ...state, plan: event.payload }
+    }
+    case 'available-commands-update': {
+      return { ...state, availableCommands: event.payload.availableCommands }
+    }
+    case 'session-config-init': {
+      return {
+        ...state,
+        modes: event.payload.modes ?? state.modes,
+        configOptions: event.payload.configOptions ?? state.configOptions,
+      }
+    }
+    case 'current-mode-update': {
+      const currentModeId = event.payload.currentModeId
+      return {
+        ...state,
+        modes: state.modes
+          ? { ...state.modes, currentModeId }
+          : { currentModeId, availableModes: [] },
+      }
+    }
+    case 'config-options-update': {
+      return { ...state, configOptions: event.payload.configOptions }
+    }
+    case 'session-info-update': {
+      const payload = event.payload
+      return {
+        ...state,
+        info: {
+          title: payload.title === undefined ? state.info.title : payload.title,
+          updatedAt:
+            payload.updatedAt === undefined
+              ? state.info.updatedAt
+              : payload.updatedAt,
+        },
+      }
+    }
+    case 'usage-update': {
+      const payload = event.payload
+      return {
+        ...state,
+        usage: {
+          used: payload.used,
+          size: payload.size,
+          cost: payload.cost ?? null,
+        },
+      }
+    }
+    case 'prompt-finished': {
+      const payload = event.payload
+      return {
+        ...state,
+        lastStopReason: payload.stopReason,
+        lastTurnUsage: payload.usage ?? null,
+        lastPromptError: payload.error ?? null,
+      }
+    }
+    case 'session-status-change': {
+      const payload = event.payload
+      const terminalReset =
+        payload.status === 'disconnected' || payload.status === 'closed'
+      return {
+        ...state,
+        connection: {
+          status: payload.status,
+          resumed:
+            payload.resumed ??
+            (terminalReset ? false : state.connection.resumed),
+          authMethods:
+            payload.status === 'auth-required'
+              ? (payload.authMethods ?? state.connection.authMethods)
+              : null,
+        },
+      }
+    }
+    case 'permission-request-created': {
+      const payload = event.payload
+      return {
+        ...state,
+        pendingPermissionRequests: [
+          ...state.pendingPermissionRequests,
+          {
+            requestId: payload.requestId,
+            toolCall: payload.toolCall,
+            options: payload.options,
+          },
+        ],
+      }
+    }
+    case 'terminal-output': {
+      const { terminalId, delta, truncated, exit } = event.payload
+      const prev = state.terminals[terminalId]
+      const LIMIT = 1 << 20
+      const trimmed = truncateUtf8Tail(
+        (prev?.output ?? '') + (delta ?? ''),
+        LIMIT,
+      )
+      const output = trimmed.output
+      const isTruncated =
+        (prev?.truncated ?? false) || (truncated ?? false) || trimmed.truncated
+      const nextExit = exit ?? prev?.exit
+      return {
+        ...state,
+        terminals: {
+          ...state.terminals,
+          [terminalId]: {
+            output,
+            truncated: isTruncated,
+            ...(nextExit === undefined ? {} : { exit: nextExit }),
+          },
+        },
+      }
+    }
+    case 'permission-request-resolved': {
+      const { requestId, status, outcome } = event.payload
+      const pending = state.pendingPermissionRequests.find(
+        (request) => request.requestId === requestId,
+      )
+      const entry: ResolvedPermissionRequest = {
+        requestId,
+        toolCall: pending
+          ? pending.toolCall
+          : ({ toolCallId: requestId } as ToolCallUpdate),
+        status,
+        ...(outcome === undefined ? {} : { outcome }),
+      }
+      const MAX = 100
+      const list = [...state.resolvedPermissionRequests, entry]
+      return {
+        ...state,
+        pendingPermissionRequests: state.pendingPermissionRequests.filter(
+          (request) => request.requestId !== requestId,
+        ),
+        resolvedPermissionRequests:
+          list.length > MAX ? list.slice(list.length - MAX) : list,
+      }
+    }
+    case 'unrecognized-update':
+    case 'diagnostic':
+    case 'agent-status-change':
+    case 'install-progress':
+    case 'auth-required':
+    case 'session-created':
+    case 'session-closed': {
+      return state
+    }
+    default: {
+      return event satisfies never
+    }
+  }
+}

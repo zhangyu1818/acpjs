@@ -1,0 +1,29 @@
+{
+  "name": "@acpjs/fixture-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "acpjs scripted protocol-replay agent used as a test fixture (never published).",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.25.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

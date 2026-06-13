@@ -1,0 +1,45 @@
+{
+  "name": "acpjs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ACP TypeScript toolkit monorepo",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "test:watch": "vitest",
+    "lint": "oxlint -c oxlint.config.ts",
+    "lint:fix": "oxlint --fix -c oxlint.config.ts",
+    "format": "oxfmt -c oxfmt.config.ts .",
+    "format:check": "oxfmt --check -c oxfmt.config.ts .",
+    "typecheck": "turbo typecheck",
+    "check:publish": "node scripts/check-publish.mjs",
+    "check:browser": "node scripts/check-browser.mjs",
+    "check:deps": "node scripts/check-deps.mjs",
+    "check": "pnpm check:deps && pnpm check:browser && pnpm check:publish",
+    "clean": "turbo clean && rm -rf node_modules/.cache .turbo .tsbuildinfo dist coverage"
+  },
+  "devDependencies": {
+    "@agentclientprotocol/sdk": "^0.25.0",
+    "@arethetypeswrong/cli": "^0.18.3",
+    "@changesets/cli": "^2.31.0",
+    "@types/node": "^25.9.2",
+    "@vitest/coverage-v8": "^4.1.8",
+    "@zhangyu1818/oxlint-config": "^2.1.0",
+    "esbuild": "^0.28.0",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "oxlint-tsgolint": "^0.23.0",
+    "publint": "^0.3.21",
+    "tsdown": "^0.22.2",
+    "turbo": "^2.9.17",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  },
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@10.28.2"
+}

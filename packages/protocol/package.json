@@ -1,0 +1,34 @@
+{
+  "name": "@acpjs/protocol",
+  "version": "0.1.0",
+  "description": "acpjs normalized event model, SessionState model, pure reducer and Transport envelope types.",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.25.0"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

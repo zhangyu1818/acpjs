@@ -1,0 +1,49 @@
+{
+  "name": "@acpjs/electron",
+  "version": "0.1.0",
+  "description": "acpjs Electron bridge: main host adapter, preload handshake surface, renderer transport (three entries).",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    "./main": {
+      "types": "./dist/main.d.ts",
+      "default": "./dist/main.js"
+    },
+    "./preload": {
+      "types": "./dist/preload.d.ts",
+      "default": "./dist/preload.js"
+    },
+    "./renderer": {
+      "types": "./dist/renderer.d.ts",
+      "default": "./dist/renderer.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@acpjs/core": "workspace:*",
+    "@acpjs/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@acpjs/client": "workspace:*",
+    "@acpjs/fixture-agent": "workspace:*",
+    "@types/node": "^25.9.2",
+    "electron": "^42.0.0"
+  },
+  "peerDependencies": {
+    "electron": ">=30"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

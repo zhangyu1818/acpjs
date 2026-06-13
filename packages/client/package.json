@@ -1,0 +1,36 @@
+{
+  "name": "@acpjs/client",
+  "version": "0.1.0",
+  "description": "acpjs typed facade, reducer-driven snapshot+subscribe store, and in-process transport.",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@acpjs/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@acpjs/core": "workspace:*",
+    "@acpjs/fixture-agent": "workspace:*",
+    "@types/node": "^25.9.2"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

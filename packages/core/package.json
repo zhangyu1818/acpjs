@@ -1,0 +1,37 @@
+{
+  "name": "@acpjs/core",
+  "version": "0.1.0",
+  "description": "acpjs AcpHost: agent process lifecycle, ACP connection, event normalization/numbering, fs/terminal defaults, permission routing, restart and StorageAdapter scheduling.",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@acpjs/protocol": "workspace:*",
+    "@agentclientprotocol/sdk": "^0.25.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@acpjs/fixture-agent": "workspace:*",
+    "@types/node": "^25.9.2"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

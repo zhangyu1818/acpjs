@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "setup-oxlint": {
+      "source": "zhangyu1818/oxlint-config",
+      "sourceType": "github",
+      "skillPath": "setup-oxlint/SKILL.md",
+      "computedHash": "94864c1a3128dd9c65fed01bd4c2e14194ffb1487160df7a21ee8a7fc8832e3a"
+    }
+  }
+}

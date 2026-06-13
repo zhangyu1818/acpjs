@@ -1,0 +1,59 @@
+# Release pipeline — npm OIDC trusted publishing (provenance, no tokens).
+#
+# This workflow stores NO npm credentials. Publishing authenticates via OIDC:
+# the `id-token: write` permission below lets the runner mint a short-lived
+# OIDC token that npm exchanges for publish rights and attaches provenance to.
+#
+# REQUIRED ONE-TIME SETUP (outside this repo, cannot be done in YAML):
+# On npmjs.com, for EACH published package
+#   (@acpjs/protocol, @acpjs/core, @acpjs/client, @acpjs/react,
+#    @acpjs/electron, @acpjs/registry)
+# open Settings -> "Trusted Publisher" and register this GitHub repository +
+# this workflow file (.github/workflows/release.yml). @acpjs/fixture-agent is
+# private/ignored and must NOT be configured. Until a package's trusted
+# publisher is configured, `npm publish` for it will fail with a 4xx.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Trusted publishing + provenance require a recent npm CLI; the version
+      # bundled with Node 24 predates it, so upgrade before publishing.
+      - name: Upgrade npm CLI for trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Create release PR or publish
+        uses: changesets/action@v1
+        with:
+          publish: pnpm changeset publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
