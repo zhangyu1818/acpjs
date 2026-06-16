@@ -1,6 +1,6 @@
 {
   "name": "@acpjs/protocol",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "acpjs normalized event model, SessionState model, pure reducer and Transport envelope types.",
   "license": "MIT",
   "files": [
