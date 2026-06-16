@@ -4,6 +4,10 @@
   "private": true,
   "description": "ACP TypeScript toolkit monorepo",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangyu1818/acpjs.git"
+  },
   "type": "module",
   "scripts": {
     "build": "turbo build",

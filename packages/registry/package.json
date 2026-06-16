@@ -3,6 +3,11 @@
   "version": "0.1.1",
   "description": "acpjs registry index fetch/cache, AgentDefinition resolution, and ensureInstalled.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangyu1818/acpjs.git",
+    "directory": "packages/registry"
+  },
   "files": [
     "dist"
   ],

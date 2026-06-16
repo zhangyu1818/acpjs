@@ -3,6 +3,11 @@
   "version": "0.2.0",
   "description": "acpjs normalized event model, SessionState model, pure reducer and Transport envelope types.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangyu1818/acpjs.git",
+    "directory": "packages/protocol"
+  },
   "files": [
     "dist"
   ],

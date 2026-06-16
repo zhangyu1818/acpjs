@@ -3,6 +3,11 @@
   "version": "0.1.1",
   "description": "acpjs Electron bridge: main host adapter, preload handshake surface, renderer transport (three entries).",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangyu1818/acpjs.git",
+    "directory": "packages/electron"
+  },
   "files": [
     "dist"
   ],
