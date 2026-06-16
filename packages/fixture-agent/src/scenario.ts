@@ -28,6 +28,7 @@ export interface FixtureScenario {
   }
   turns?: FixtureTurn[]
   loadSession?: {
+    steps?: FixtureStep[]
     replay?: SessionUpdate[]
     modes?: SessionModeState
     configOptions?: SessionConfigOption[]
@@ -39,9 +40,12 @@ export interface FixtureScenario {
     nextCursor?: string
   }
   resumeSession?: {
+    steps?: FixtureStep[]
     modes?: SessionModeState
     configOptions?: SessionConfigOption[]
     expectMcpServers?: McpServer[]
+    error?: { code: number; message: string; data?: unknown }
+    failures?: number
   }
   setConfigOption?: {
     configOptions: SessionConfigOption[]

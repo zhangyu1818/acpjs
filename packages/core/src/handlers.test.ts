@@ -1,12 +1,13 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import {
+  mkdtemp,
+  readFile,
+  realpath,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-  createInitialSessionState,
-  reduce,
-  type AcpSessionEvent,
-} from '@acpjs/protocol'
 import { expect, test } from 'vitest'
 
 import {
@@ -20,9 +21,11 @@ import {
 import {
   collectEvents,
   fixtureDefinition,
+  sessionParams,
   trackHost,
-  waitFor,
 } from './test-harness.ts'
+
+import type { AcpSessionEvent } from '@acpjs/protocol'
 
 const sessionId = 'sess-handlers'
 
@@ -30,7 +33,7 @@ test('default fs handler reads with 1-based line and limit', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'acpjs-fs-'))
   const file = join(dir, 'sample.txt')
   await writeFile(file, 'one\ntwo\nthree\nfour', 'utf8')
-  const fs = createDefaultFsHandler()
+  const fs = createDefaultFsHandler(() => [dir])
 
   expect(await fs.readTextFile({ sessionId, path: file })).toEqual({
     content: 'one\ntwo\nthree\nfour',
@@ -49,11 +52,59 @@ test('default fs handler reads with 1-based line and limit', async () => {
 test('default fs handler creates missing files on write', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'acpjs-fs-'))
   const file = join(dir, 'created.txt')
-  const fs = createDefaultFsHandler()
+  const fs = createDefaultFsHandler(() => [dir])
 
   await fs.writeTextFile({ sessionId, path: file, content: 'fresh' })
 
   expect(await readFile(file, 'utf8')).toBe('fresh')
+})
+
+test('default fs handler rejects symlinks that resolve outside session roots', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'acpjs-fs-root-'))
+  const outside = await mkdtemp(join(tmpdir(), 'acpjs-fs-outside-'))
+  const outsideFile = join(outside, 'secret.txt')
+  const link = join(root, 'secret-link.txt')
+  await writeFile(outsideFile, 'secret', 'utf8')
+  await symlink(outsideFile, link)
+  const fs = createDefaultFsHandler(() => [root])
+  const resolvedOutside = await realpath(outsideFile)
+
+  await expect(
+    fs.readTextFile({ sessionId, path: link }),
+  ).rejects.toMatchObject({
+    code: -32602,
+    message: expect.stringContaining('path outside session roots'),
+    data: { path: resolvedOutside },
+  })
+  await expect(
+    fs.writeTextFile({ sessionId, path: link, content: 'changed' }),
+  ).rejects.toMatchObject({
+    code: -32602,
+    message: expect.stringContaining('path outside session roots'),
+    data: { path: resolvedOutside },
+  })
+  expect(await readFile(outsideFile, 'utf8')).toBe('secret')
+})
+
+test('default fs handler rejects non-absolute paths', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'acpjs-fs-relative-'))
+  await writeFile(join(dir, 'sample.txt'), 'body', 'utf8')
+  const fs = createDefaultFsHandler(() => [dir])
+
+  await expect(
+    fs.readTextFile({ sessionId, path: 'sample.txt' }),
+  ).rejects.toMatchObject({
+    code: -32602,
+    message: expect.stringContaining('fs path must be absolute'),
+    data: { path: 'sample.txt' },
+  })
+  await expect(
+    fs.writeTextFile({ sessionId, path: 'sample.txt', content: 'x' }),
+  ).rejects.toMatchObject({
+    code: -32602,
+    message: expect.stringContaining('fs path must be absolute'),
+    data: { path: 'sample.txt' },
+  })
 })
 
 test('default terminal handler runs the full create/output/wait/kill/release chain', async () => {
@@ -78,7 +129,11 @@ test('default terminal handler runs the full create/output/wait/kill/release cha
   await terminal.releaseTerminal({ sessionId, terminalId })
   await expect(
     terminal.terminalOutput({ sessionId, terminalId }),
-  ).rejects.toThrow('unknown terminal')
+  ).rejects.toMatchObject({
+    code: -32602,
+    message: expect.stringContaining('unknown terminal'),
+    data: { terminalId },
+  })
 })
 
 test('terminal output truncates from the beginning at outputByteLimit', async () => {
@@ -137,19 +192,15 @@ test('terminal create applies env variables on top of the host environment', asy
   await terminal.releaseTerminal({ sessionId, terminalId })
 })
 
-test('terminal spawn failure maps to exitCode -1 instead of hanging', async () => {
+test('terminal spawn failure rejects createTerminal instead of hanging', async () => {
   const terminal = createDefaultTerminalHandler()
 
-  const { terminalId } = await terminal.createTerminal({
-    sessionId,
-    command: '/nonexistent/definitely-not-a-command',
-  })
-  const exit = await terminal.waitForTerminalExit({ sessionId, terminalId })
-
-  expect(exit).toEqual({ exitCode: -1 })
-  const output = await terminal.terminalOutput({ sessionId, terminalId })
-  expect(output.exitStatus).toEqual({ exitCode: -1 })
-  await terminal.releaseTerminal({ sessionId, terminalId })
+  await expect(
+    terminal.createTerminal({
+      sessionId,
+      command: '/nonexistent/definitely-not-a-command',
+    }),
+  ).rejects.toThrow()
 })
 
 test('terminal release kills a still-running process', async () => {
@@ -189,7 +240,11 @@ test('terminal release kills a still-running process', async () => {
   }
   await expect(
     terminal.terminalOutput({ sessionId, terminalId }),
-  ).rejects.toThrow('unknown terminal')
+  ).rejects.toMatchObject({
+    code: -32602,
+    message: expect.stringContaining('unknown terminal'),
+    data: { terminalId },
+  })
 })
 
 test('terminal kill leaves terminalId usable for wait and output', async () => {
@@ -212,10 +267,12 @@ test('terminal kill leaves terminalId usable for wait and output', async () => {
   await terminal.releaseTerminal({ sessionId, terminalId })
 })
 
-test('agent-driven fs and terminal round trips succeed end to end', async () => {
+test('agent-driven fs and injected terminal round trips succeed end to end', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'acpjs-roundtrip-'))
   const target = join(dir, 'agent-written.txt')
-  const host = trackHost(createAcpHost())
+  const host = trackHost(
+    createAcpHost({ terminal: createDefaultTerminalHandler() }),
+  )
   const { definition } = await fixtureDefinition({
     turns: [
       {
@@ -233,7 +290,7 @@ test('agent-driven fs and terminal round trips succeed end to end', async () => 
     ],
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams(dir))
   if (created.status !== 'active') throw new Error('expected active')
 
   const result = await host.prompt(created.sessionId, [
@@ -244,7 +301,7 @@ test('agent-driven fs and terminal round trips succeed end to end', async () => 
   expect(await readFile(target, 'utf8')).toBe('from agent')
 })
 
-test('default terminal handler broadcasts terminal-output events that reduce into terminal state', async () => {
+test('host without an injected terminal handler rejects agent terminal calls', async () => {
   const host = trackHost(createAcpHost())
   const { definition } = await fixtureDefinition(
     {
@@ -265,30 +322,11 @@ test('default terminal handler broadcasts terminal-output events that reduce int
     'agent-term',
   )
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
-  const events = collectEvents(host, 'sess-term') as AcpSessionEvent[]
-  await host.prompt('sess-term', [{ type: 'text', text: 'go' }])
+  const result = await host.prompt('sess-term', [{ type: 'text', text: 'go' }])
 
-  await waitFor(() =>
-    events.some(
-      (event) =>
-        event.type === 'terminal-output' && event.payload.exit !== undefined,
-    ),
-  )
-
-  const payloads = events.flatMap((event) =>
-    event.type === 'terminal-output' ? [event.payload] : [],
-  )
-  expect(payloads.length).toBeGreaterThan(0)
-  const deltas = payloads.map((payload) => payload.delta ?? '').join('')
-  expect(deltas).toBe('term output here')
-
-  let state = createInitialSessionState('sess-term')
-  for (const event of events) state = reduce(state, event)
-  const terminalId = payloads[0]?.terminalId ?? ''
-  expect(state.terminals[terminalId]?.output).toBe('term output here')
-  expect(state.terminals[terminalId]?.exit).toEqual({ exitCode: 0 })
+  expect(result.error).toMatchObject({ code: -32603 })
 })
 
 test('an injected terminal handler does not broadcast terminal-output events', async () => {
@@ -310,7 +348,7 @@ test('an injected terminal handler does not broadcast terminal-output events', a
     ],
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const events = collectEvents(host, 'sess-term-injected') as AcpSessionEvent[]
   await host.prompt('sess-term-injected', [{ type: 'text', text: 'go' }])
@@ -399,7 +437,7 @@ test('injected fs handler replaces the built-in implementation entirely', async 
     turns: [{ steps: [{ kind: 'readTextFile', path: '/virtual/file.txt' }] }],
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
 
   const readTurn = await host.prompt(created.sessionId, [

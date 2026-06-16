@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 
 import { e2eClient, waitFor } from './e2e-harness.ts'
-import { rejectionOf } from './test-support.ts'
+import { rejectionOf, resumeParams, sessionParams } from './test-support.ts'
 
 import type { PermissionRequest } from './index.ts'
 
@@ -89,7 +89,7 @@ test('spawn, create, subscribe and prompt over the real in-process chain builds 
   })
 
   const agent = await client.agents.spawn(definition)
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
   expect(session.sessionId).toBe('sess-e2e')
 
   const result = await session.prompt([{ type: 'text', text: 'go' }])
@@ -124,13 +124,7 @@ test('spawn, create, subscribe and prompt over the real in-process chain builds 
   expect(state.plan).toEqual({
     entries: [{ content: 'step one', priority: 'high', status: 'pending' }],
   })
-  expect(state.modes).toEqual({
-    currentModeId: 'code',
-    availableModes: [
-      { id: 'code', name: 'Code' },
-      { id: 'plan', name: 'Plan' },
-    ],
-  })
+  expect(state.modes).toBeNull()
   expect(state.configOptions).toEqual([
     { type: 'boolean', id: 'verbose', name: 'Verbose', currentValue: false },
   ])
@@ -168,7 +162,7 @@ test('permission round trip: request surfaces with passthrough payload, respond 
     ],
   })
   const agent = await client.agents.spawn(definition)
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   const seen: PermissionRequest[] = []
   let pendingDuringRequest = 0
@@ -205,24 +199,19 @@ test('permission round trip: request surfaces with passthrough payload, respond 
   expect(error).toMatchObject({ code: 'acpjs/already-answered' })
 })
 
-test('auth-required create rejects with authMethods, authenticate unblocks the retry', async () => {
+test('agent auth errors from create are propagated to the caller', async () => {
   const { client, definition } = await e2eClient({
     initialize: { authMethods: [{ id: 'device', name: 'Device flow' }] },
     session: { sessionId: 'sess-auth', authRequired: true },
   })
   const agent = await client.agents.spawn(definition)
 
-  const error = await rejectionOf(agent.sessions.create({ cwd: '/tmp' }))
+  const error = await rejectionOf(agent.sessions.create(sessionParams('/tmp')))
   expect(error).toMatchObject({
-    code: 'acpjs/auth-required',
-    data: { authMethods: [{ id: 'device', name: 'Device flow' }] },
-    retryable: true,
+    code: 'acpjs/agent-error',
+    data: { code: -32000, message: 'Authentication required' },
+    retryable: false,
   })
-
-  await agent.authenticate('device')
-  const session = await agent.sessions.create({ cwd: '/tmp' })
-  expect(session.sessionId).toBe('sess-auth')
-  expect(session.getSnapshot().connection.status).toBe('active')
 })
 
 test('cancel ends the in-flight prompt with stopReason cancelled', async () => {
@@ -230,7 +219,7 @@ test('cancel ends the in-flight prompt with stopReason cancelled', async () => {
     turns: [{ steps: [{ kind: 'sleep', ms: 5000 }] }],
   })
   const agent = await client.agents.spawn(definition)
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   const inFlight = session.prompt([{ type: 'text', text: 'go' }])
   await waitFor(() => session.getSnapshot().connection.status === 'prompting')
@@ -245,16 +234,15 @@ test('cancel ends the in-flight prompt with stopReason cancelled', async () => {
 test('capability-gated methods reject with acpjs/capability-unsupported through the facade', async () => {
   const { client, definition } = await e2eClient({})
   const agent = await client.agents.spawn(definition)
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   expect(await rejectionOf(agent.sessions.list())).toMatchObject({
     code: 'acpjs/capability-unsupported',
   })
   expect(
-    await rejectionOf(agent.sessions.resume(session.sessionId)),
-  ).toMatchObject({ code: 'acpjs/capability-unsupported' })
-  expect(
-    await rejectionOf(agent.sessions.delete(session.sessionId)),
+    await rejectionOf(
+      agent.sessions.resume(session.sessionId, resumeParams('/tmp')),
+    ),
   ).toMatchObject({ code: 'acpjs/capability-unsupported' })
   expect(await rejectionOf(session.setMode('plan'))).toMatchObject({
     code: 'acpjs/capability-unsupported',
@@ -262,19 +250,17 @@ test('capability-gated methods reject with acpjs/capability-unsupported through 
   expect(
     await rejectionOf(session.setConfigOption('x', { value: 'y' })),
   ).toMatchObject({ code: 'acpjs/capability-unsupported' })
-  expect(await rejectionOf(agent.logout())).toMatchObject({
-    code: 'acpjs/capability-unsupported',
-  })
+  await agent.sessions.delete(session.sessionId)
+  expect(session.getSnapshot().connection.status).toBe('deleted')
 })
 
-test('capability-rich agent: load, list, setMode, resume, logout and delete succeed end to end with mcpServers passthrough', async () => {
+test('capability-rich agent: load, list, setMode, resume and delete succeed end to end with mcpServers passthrough', async () => {
   const mcpServers = [{ name: 'svc', command: '/bin/echo', args: [], env: [] }]
   const { client, definition } = await e2eClient({
     initialize: {
       agentCapabilities: {
         loadSession: true,
         sessionCapabilities: { list: {}, resume: {}, delete: {} },
-        auth: { logout: {} },
       },
     },
     session: {
@@ -288,6 +274,13 @@ test('capability-rich agent: load, list, setMode, resume, logout and delete succ
       },
     },
     loadSession: {
+      modes: {
+        currentModeId: 'code',
+        availableModes: [
+          { id: 'code', name: 'Code' },
+          { id: 'plan', name: 'Plan' },
+        ],
+      },
       replay: [
         {
           sessionUpdate: 'agent_message_chunk',
@@ -302,12 +295,12 @@ test('capability-rich agent: load, list, setMode, resume, logout and delete succ
     resumeSession: { expectMcpServers: mcpServers },
   })
   const agent = await client.agents.spawn(definition)
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
-  const loaded = await agent.sessions.load(session.sessionId, {
-    cwd: '/tmp',
-    mcpServers,
-  })
+  const loaded = await agent.sessions.load(
+    session.sessionId,
+    sessionParams('/tmp', { mcpServers }),
+  )
   expect(loaded).toBe(session)
   expect(loaded.getSnapshot().connection).toMatchObject({
     status: 'active',
@@ -322,17 +315,18 @@ test('capability-rich agent: load, list, setMode, resume, logout and delete succ
 
   await session.setMode('plan')
 
-  const resumed = await agent.sessions.resume(session.sessionId)
+  const resumed = await agent.sessions.resume(
+    session.sessionId,
+    resumeParams('/tmp', { mcpServers }),
+  )
   expect(resumed).toBe(session)
   expect(resumed.getSnapshot().connection).toMatchObject({
     status: 'active',
     resumed: true,
   })
 
-  await agent.logout()
-
   await agent.sessions.delete(session.sessionId)
-  await waitFor(() => session.getSnapshot().connection.status === 'closed')
+  await waitFor(() => session.getSnapshot().connection.status === 'deleted')
 })
 
 test('a session created by one client is announced to another connection and discoverable via list and attach', async () => {
@@ -360,7 +354,7 @@ test('a session created by one client is announced to another connection and dis
   })
 
   const agent = await client.agents.spawn(definition)
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
   await waitFor(() => announced > 0)
 
   const listed = await other.sessions.list()
@@ -384,6 +378,23 @@ test('a session created by one client is announced to another connection and dis
   expect(attached.getSnapshot()).toEqual(session.getSnapshot())
 })
 
+test('a client connected after host-created sessions materializes them from host projections', async () => {
+  const { definition, host, connectClient } = await e2eClient({
+    session: { sessionId: 'sess-host-started' },
+  })
+  const agent = await host.spawnAgent(definition)
+  await host.createSession(agent.agentId, sessionParams('/tmp'))
+
+  const late = connectClient()
+
+  await waitFor(() => late.sessions.get('sess-host-started') !== undefined)
+  const session = late.sessions.get('sess-host-started')
+  expect(late.sessions.getSnapshot().map((item) => item.sessionId)).toContain(
+    'sess-host-started',
+  )
+  expect(session?.getSnapshot().connection.status).toBe('active')
+})
+
 test('close marks the session closed and later operations reject with acpjs/session-closed', async () => {
   const { client, definition } = await e2eClient({
     initialize: {
@@ -391,7 +402,7 @@ test('close marks the session closed and later operations reject with acpjs/sess
     },
   })
   const agent = await client.agents.spawn(definition)
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   await session.close()
 

@@ -15,6 +15,7 @@ import {
   diagnosticPayloads,
   fixtureDefinition,
   rejectionOf,
+  sessionParams,
   trackHost,
   waitFor,
 } from './test-harness.ts'
@@ -45,7 +46,7 @@ test('public API returns and emitted events are structured-clone serializable (I
   })
 
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const sessionEvents = collectEvents(host, created.sessionId)
   const result = await host.prompt(created.sessionId, [
@@ -82,6 +83,8 @@ test('an unserializable host event is rejected with an event/unserializable diag
     appendMeta: (meta) => base.appendMeta(meta),
     listSessions: () => base.listSessions(),
     loadEvents: (sessionId, fromSeq) => base.loadEvents(sessionId, fromSeq),
+    replaceSession: (sessionId, meta, events) =>
+      base.replaceSession(sessionId, meta, events),
   }
   const host = trackHost(createAcpHost({ storage }))
   const events = collectEvents(host, undefined)
@@ -112,7 +115,7 @@ test('an unserializable session event is rejected with an event/unserializable d
     ],
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const sessionEvents = collectEvents(host, created.sessionId)
 
@@ -145,6 +148,11 @@ test('an unserializable session event is rejected with an event/unserializable d
       code: 'event/unserializable',
       message: 'rejected unserializable permission-request-resolved event',
       sessionId: created.sessionId,
+    },
+    {
+      level: 'error',
+      code: 'event/unserializable',
+      message: 'rejected unserializable permission-updated event',
     },
   ])
   expect(() => structuredClone(sessionEvents)).not.toThrow()
@@ -181,9 +189,10 @@ test('host restart chain: restore from JSONL then loadSession resumes the sessio
   const first = createAcpHost({ storage: createJsonlStorage(file) })
   const { definition } = await fixtureDefinition(scenario)
   const firstAgent = await first.spawnAgent(definition)
-  const firstSession = await first.createSession(firstAgent.agentId, {
-    cwd: '/tmp',
-  })
+  const firstSession = await first.createSession(
+    firstAgent.agentId,
+    sessionParams('/tmp'),
+  )
   if (firstSession.status !== 'active') throw new Error('expected active')
   await first.prompt(firstSession.sessionId, [{ type: 'text', text: 'go' }])
   await first.dispose()
@@ -209,12 +218,14 @@ test('host restart chain: restore from JSONL then loadSession resumes the sessio
       sessionId: 'sess-restore',
       status: 'disconnected',
       cwd: resolve('/tmp'),
+      mcpServers: [],
+      additionalDirectories: [],
       agentDefinitionId: 'fixture',
     },
   ])
 
   const missingAgent = await rejectionOf(
-    second.loadSession('agent-x', 'sess-restore'),
+    second.loadSession('agent-x', 'sess-restore', sessionParams('/tmp')),
   )
   expect(missingAgent).toMatchObject({ code: 'acpjs/agent-exited' })
 
@@ -223,7 +234,7 @@ test('host restart chain: restore from JSONL then loadSession resumes the sessio
   const before = events.filter(
     (event) => event.type === 'agent-message-chunk',
   ).length
-  await second.loadSession(agent.agentId, 'sess-restore', {})
+  await second.loadSession(agent.agentId, 'sess-restore', sessionParams('/tmp'))
 
   await waitFor(() => second.getSession('sess-restore')?.status === 'active')
   expect(second.getSession('sess-restore')).toEqual({
@@ -231,12 +242,14 @@ test('host restart chain: restore from JSONL then loadSession resumes the sessio
     status: 'active',
     agentId: agent.agentId,
     cwd: resolve('/tmp'),
+    mcpServers: [],
+    additionalDirectories: [],
     agentDefinitionId: 'fixture',
   })
   const after = events.filter(
     (event) => event.type === 'agent-message-chunk',
   ).length
-  expect(after).toBe(before)
+  expect(after).toBe(before + 1)
   const lastStatus = events.findLast(
     (event) => event.type === 'session-status-change',
   )
@@ -246,5 +259,5 @@ test('host restart chain: restore from JSONL then loadSession resumes the sessio
       : undefined,
   ).toEqual({ status: 'active', resumed: true })
   const seqs = events.map((event) => event.seq)
-  expect(seqs).toEqual(seqs.map((_, index) => (seqs[0] ?? 1) + index))
+  expect(seqs.slice(-3)).toEqual([1, 2, 3])
 })

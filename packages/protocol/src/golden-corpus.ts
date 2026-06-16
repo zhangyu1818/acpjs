@@ -8,7 +8,6 @@ import type {
   AcpEventExtensions,
   AcpHostEvent,
   AcpSessionEvent,
-  SessionAnnouncePayload,
 } from './index'
 
 const base = 1718000000000
@@ -57,19 +56,6 @@ function host<T extends AcpHostEvent['type']>(
   } as AcpEvent
 }
 
-function announce(
-  seq: number,
-  type: 'session-created' | 'session-closed',
-  payload: SessionAnnouncePayload,
-): AcpEvent {
-  return {
-    seq,
-    ts: base + 200 + seq,
-    type,
-    payload,
-  }
-}
-
 export function goldenModelOption(currentValue: string): SessionConfigOption {
   return {
     type: 'select',
@@ -95,6 +81,7 @@ export function goldenModes(currentModeId: string): SessionModeState {
 }
 
 export const goldenCorpus: AcpEvent[] = [
+  session(0, 'session-reset', { reason: 'load' }),
   session(1, 'session-config-init', {
     modes: goldenModes('normal'),
     configOptions: [goldenModelOption('sonnet')],
@@ -200,8 +187,16 @@ export const goldenCorpus: AcpEvent[] = [
     terminalId: 'term-1',
     exit: { exitCode: 0 },
   }),
-  host(1, 'agent-status-change', { status: 'spawning', restartCount: 0 }),
-  host(2, 'agent-status-change', { status: 'ready', restartCount: 0 }),
+  host(1, 'agent-updated', {
+    agentId: goldenAgentId,
+    status: 'spawning',
+    restartCount: 0,
+  }),
+  host(2, 'agent-updated', {
+    agentId: goldenAgentId,
+    status: 'ready',
+    restartCount: 0,
+  }),
   host(3, 'install-progress', {
     stage: 'downloading',
     version: '1.2.3',
@@ -214,18 +209,19 @@ export const goldenCorpus: AcpEvent[] = [
     code: 'agent.spawn',
     message: 'agent spawned',
   }),
-  host(5, 'auth-required', {
-    agentId: goldenAgentId,
-    authMethods: [{ id: 'device', name: 'Device flow' }],
-  }),
-  announce(6, 'session-created', {
+  host(5, 'session-updated', {
     sessionId: goldenSessionId,
     agentId: goldenAgentId,
     cwd: '/workspace',
+    additionalDirectories: [],
     status: 'active',
   }),
-  announce(7, 'session-closed', {
-    sessionId: 'sess-other',
-    status: 'closed',
+  host(6, 'permission-updated', {
+    requestId: 'req-2',
+    sessionId: goldenSessionId,
+    agentId: goldenAgentId,
+    status: 'pending',
+    toolCall: { toolCallId: 'call-2' },
+    options: [{ kind: 'allow_once', name: 'Allow', optionId: 'allow' }],
   }),
 ]

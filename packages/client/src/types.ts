@@ -1,15 +1,15 @@
 import type {
-  AgentCapabilities,
   AgentDefinition,
   AgentSnapshotWire,
-  AuthMethod,
   ContentBlock,
+  CreateOrLoadSessionParams,
+  DiagnosticEvent,
   ErrorObject,
   ListSessionsResponse,
-  McpServer,
   PermissionRequestCreatedPayload,
   PromptFinishedPayload,
   RequestPermissionOutcome,
+  ResumeSessionParams,
   SessionConfigOption,
   SessionConfigValue,
   SessionSnapshotWire,
@@ -19,9 +19,7 @@ import type {
 } from '@acpjs/protocol'
 
 export type { AgentDefinition, SessionConfigValue }
-
-export type AgentSnapshot = AgentSnapshotWire
-export type SessionSnapshot = SessionSnapshotWire
+export type { CreateOrLoadSessionParams, ResumeSessionParams }
 
 export interface AcpSession {
   readonly sessionId: string
@@ -37,33 +35,30 @@ export interface AcpSession {
   ) => Promise<SessionConfigOption[]>
 }
 
-export interface SessionCreateParams {
-  cwd: string
-  mcpServers?: McpServer[]
-}
-
 export interface SessionListParams {
   cursor?: string
   cwd?: string
 }
 
 export interface AcpAgentSessions {
-  create: (params: SessionCreateParams) => Promise<AcpSession>
-  load: (sessionId: string, params: SessionCreateParams) => Promise<AcpSession>
+  create: (params: CreateOrLoadSessionParams) => Promise<AcpSession>
+  load: (
+    sessionId: string,
+    params: CreateOrLoadSessionParams,
+  ) => Promise<AcpSession>
   list: (params?: SessionListParams) => Promise<ListSessionsResponse>
-  resume: (sessionId: string) => Promise<AcpSession>
+  resume: (
+    sessionId: string,
+    params: ResumeSessionParams,
+  ) => Promise<AcpSession>
   delete: (sessionId: string) => Promise<void>
 }
 
 export interface AcpAgent {
   readonly agentId: string
-  readonly capabilities?: AgentCapabilities
-  readonly authMethods?: AuthMethod[]
-  getSnapshot: () => AgentSnapshot
+  getSnapshot: () => AgentSnapshotWire
   subscribe: (listener: ChangeListener) => () => void
   readonly sessions: AcpAgentSessions
-  authenticate: (methodId: string) => Promise<void>
-  logout: () => Promise<void>
 }
 
 export interface PermissionRequest {
@@ -91,20 +86,24 @@ export interface AcpClient {
     get: (agentId: string) => AcpAgent | undefined
     getSnapshot: () => readonly AcpAgent[]
     subscribe: (listener: ChangeListener) => () => void
-    list: () => Promise<readonly AgentSnapshot[]>
+    list: () => Promise<readonly AgentSnapshotWire[]>
     attach: (agentId: string) => Promise<AcpAgent>
   }
   readonly sessions: {
     get: (sessionId: string) => AcpSession | undefined
     getSnapshot: () => readonly AcpSession[]
     subscribe: (listener: ChangeListener) => () => void
-    list: () => Promise<readonly SessionSnapshot[]>
+    list: () => Promise<readonly SessionSnapshotWire[]>
     attach: (sessionId: string) => Promise<AcpSession>
-    restore: () => Promise<readonly SessionSnapshot[]>
+    restore: () => Promise<readonly SessionSnapshotWire[]>
   }
   readonly permissions: {
     getSnapshot: () => readonly PermissionRequest[]
     subscribe: (listener: PermissionListener) => () => void
+  }
+  readonly diagnostics: {
+    getSnapshot: () => readonly DiagnosticEvent[]
+    subscribe: (listener: ChangeListener) => () => void
   }
   readonly status: {
     getSnapshot: () => ConnectionStatusSnapshot

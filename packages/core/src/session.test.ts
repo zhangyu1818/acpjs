@@ -6,6 +6,8 @@ import {
   collectEvents,
   fixtureDefinition,
   rejectionOf,
+  resumeParams,
+  sessionParams,
   trackHost,
 } from './test-harness.ts'
 
@@ -17,7 +19,7 @@ async function activeSession(scenario: FixtureScenario) {
   const host = trackHost(createAcpHost())
   const { definition } = await fixtureDefinition(scenario)
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active session')
   return { host, agentId: agent.agentId, sessionId: created.sessionId }
 }
@@ -38,21 +40,25 @@ test('createSession resolves active, synthesizes session-config-init and status 
   })
   const agent = await host.spawnAgent(definition)
 
-  const created = await host.createSession(agent.agentId, {
-    cwd: 'relative-dir',
-  })
+  const created = await host.createSession(
+    agent.agentId,
+    sessionParams('relative-dir'),
+  )
 
-  expect(created).toEqual({ status: 'active', sessionId: 'sess-1' })
+  expect(created).toMatchObject({
+    status: 'active',
+    sessionId: 'sess-1',
+    agentId: agent.agentId,
+    agentDefinitionId: 'fixture',
+    mcpServers: [],
+    additionalDirectories: [],
+  })
   const events = collectEvents(host, 'sess-1') as AcpSessionEvent[]
   expect(events.map((event) => [event.seq, event.type])).toEqual([
     [1, 'session-config-init'],
     [2, 'session-status-change'],
   ])
   expect(events[0]?.payload).toEqual({
-    modes: {
-      currentModeId: 'code',
-      availableModes: [{ id: 'code', name: 'Code' }],
-    },
     configOptions: [
       { type: 'boolean', id: 'verbose', name: 'Verbose', currentValue: true },
     ],
@@ -259,7 +265,7 @@ test('non-auth protocol error on session/new rethrows without creating a session
   const agent = await host.spawnAgent(definition)
 
   const error = await rejectionOf(
-    host.createSession(agent.agentId, { cwd: '/tmp' }),
+    host.createSession(agent.agentId, sessionParams('/tmp')),
   )
 
   expect(error).toMatchObject({ code: -32603, message: 'new session boom' })
@@ -292,20 +298,6 @@ test('protocol error inside prompt yields prompt-finished with error and session
   expect(host.getSession(sessionId)?.status).toBe('active')
 })
 
-test('closeSession transitions to closed and rejects further operations with acpjs/session-closed', async () => {
-  const { host, sessionId } = await activeSession({})
-
-  await host.closeSession(sessionId)
-
-  expect(host.getSession(sessionId)?.status).toBe('closed')
-  const promptError = await rejectionOf(
-    host.prompt(sessionId, [{ type: 'text', text: 'go' }]),
-  )
-  expect(promptError).toMatchObject({ code: 'acpjs/session-closed' })
-  const closeError = await rejectionOf(host.closeSession(sessionId))
-  expect(closeError).toMatchObject({ code: 'acpjs/session-closed' })
-})
-
 test('operations against an exited agent are rejected with acpjs/agent-exited', async () => {
   const { host, agentId, sessionId } = await activeSession({
     turns: [{ steps: [{ kind: 'exit', code: 1 }] }],
@@ -316,7 +308,9 @@ test('operations against an exited agent are rejected with acpjs/agent-exited', 
 
   expect(host.getAgent(agentId)?.status).toBe('exited')
   expect(host.getSession(sessionId)?.status).toBe('disconnected')
-  const error = await rejectionOf(host.createSession(agentId, { cwd: '/tmp' }))
+  const error = await rejectionOf(
+    host.createSession(agentId, sessionParams('/tmp')),
+  )
   expect(error).toMatchObject({ code: 'acpjs/agent-exited' })
 })
 
@@ -326,24 +320,22 @@ test('capability-gated methods reject with acpjs/capability-unsupported when und
   expect(await rejectionOf(host.listSessions(agentId))).toMatchObject({
     code: 'acpjs/capability-unsupported',
   })
-  expect(await rejectionOf(host.resumeSession(sessionId))).toMatchObject({
+  expect(
+    await rejectionOf(host.resumeSession(agentId, sessionId, resumeParams())),
+  ).toMatchObject({
     code: 'acpjs/capability-unsupported',
   })
-  expect(await rejectionOf(host.deleteSession(sessionId))).toMatchObject({
-    code: 'acpjs/capability-unsupported',
-  })
-  expect(await rejectionOf(host.loadSession(agentId, sessionId))).toMatchObject(
-    { code: 'acpjs/capability-unsupported' },
-  )
+  expect(
+    await rejectionOf(host.loadSession(agentId, sessionId, sessionParams())),
+  ).toMatchObject({ code: 'acpjs/capability-unsupported' })
   expect(await rejectionOf(host.setMode(sessionId, 'plan'))).toMatchObject({
     code: 'acpjs/capability-unsupported',
   })
   expect(
     await rejectionOf(host.setConfigOption(sessionId, 'x', { value: 'y' })),
   ).toMatchObject({ code: 'acpjs/capability-unsupported' })
-  expect(await rejectionOf(host.logout(agentId))).toMatchObject({
-    code: 'acpjs/capability-unsupported',
-  })
+  await host.deleteSession(agentId, sessionId)
+  expect(host.getSession(sessionId)).toBeUndefined()
 })
 
 test('capability-gated methods pass through when declared', async () => {
@@ -352,7 +344,6 @@ test('capability-gated methods pass through when declared', async () => {
     initialize: {
       agentCapabilities: {
         sessionCapabilities: { list: {}, resume: {}, close: {}, delete: {} },
-        auth: { logout: {} },
       },
     },
     session: {
@@ -384,7 +375,7 @@ test('capability-gated methods pass through when declared', async () => {
     },
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const sessionId = created.sessionId
   const events = collectEvents(host, sessionId) as AcpSessionEvent[]
@@ -393,7 +384,9 @@ test('capability-gated methods pass through when declared', async () => {
   expect(listed.sessions).toEqual([{ sessionId: 'sess-caps', cwd: '/tmp' }])
   expect(listed.nextCursor).toBe('cursor-2')
 
-  await host.setMode(sessionId, 'plan')
+  await expect(host.setMode(sessionId, 'plan')).rejects.toMatchObject({
+    code: 'acpjs/capability-unsupported',
+  })
 
   const configOptions = await host.setConfigOption(sessionId, 'verbose', {
     type: 'boolean',
@@ -407,12 +400,11 @@ test('capability-gated methods pass through when declared', async () => {
   )
   expect(configEvent?.payload).toEqual({ configOptions })
 
-  await host.resumeSession(sessionId)
+  await host.resumeSession(agent.agentId, sessionId, resumeParams('/tmp'))
   expect(host.getSession(sessionId)?.status).toBe('active')
 
-  await host.logout(agent.agentId)
-  await host.deleteSession(sessionId)
-  expect(host.getSession(sessionId)?.status).toBe('closed')
+  await host.deleteSession(agent.agentId, sessionId)
+  expect(host.getSession(sessionId)).toBeUndefined()
 })
 
 test('closeSession forwards protocol session/close when the agent declares the capability', async () => {
@@ -423,7 +415,7 @@ test('closeSession forwards protocol session/close when the agent declares the c
     },
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
 
   await host.closeSession(created.sessionId)
@@ -431,7 +423,7 @@ test('closeSession forwards protocol session/close when the agent declares the c
   expect(host.getSession(created.sessionId)?.status).toBe('closed')
 })
 
-test('createSession announces session-created on the host sequence with sessionId, agentId, cwd and active status', async () => {
+test('createSession publishes a session-updated projection with sessionId, agentId, cwd and active status', async () => {
   const host = trackHost(createAcpHost())
   const hostEvents = collectEvents(host, undefined)
   const { definition } = await fixtureDefinition({
@@ -439,10 +431,14 @@ test('createSession announces session-created on the host sequence with sessionI
   })
   const agent = await host.spawnAgent(definition)
 
-  await host.createSession(agent.agentId, { cwd: '/tmp' })
+  await host.createSession(agent.agentId, sessionParams('/tmp'))
 
-  const announce = hostEvents.find((event) => event.type === 'session-created')
-  expect(announce?.payload).toEqual({
+  const projection = hostEvents.find(
+    (event) =>
+      event.type === 'session-updated' &&
+      event.payload.sessionId === 'sess-announce',
+  )
+  expect(projection?.payload).toMatchObject({
     sessionId: 'sess-announce',
     agentId: agent.agentId,
     cwd: '/tmp',
@@ -450,21 +446,30 @@ test('createSession announces session-created on the host sequence with sessionI
   })
 })
 
-test('closeSession announces session-closed on the host sequence', async () => {
-  const { host, agentId, sessionId } = await activeSession({})
+test('closeSession publishes a closed session-updated projection', async () => {
+  const { host, agentId, sessionId } = await activeSession({
+    initialize: {
+      agentCapabilities: { sessionCapabilities: { close: {} } },
+    },
+  })
   const hostEvents = collectEvents(host, undefined)
 
   await host.closeSession(sessionId)
 
-  const announce = hostEvents.find((event) => event.type === 'session-closed')
-  expect(announce?.payload).toEqual({
+  const projection = hostEvents.find(
+    (event) =>
+      event.type === 'session-updated' &&
+      event.payload.sessionId === sessionId &&
+      event.payload.status === 'closed',
+  )
+  expect(projection?.payload).toMatchObject({
     sessionId,
     agentId,
     status: 'closed',
   })
 })
 
-test('deleteSession announces session-closed on the host sequence', async () => {
+test('deleteSession publishes a deleted session-updated projection', async () => {
   const host = trackHost(createAcpHost())
   const { definition } = await fixtureDefinition({
     initialize: {
@@ -473,16 +478,21 @@ test('deleteSession announces session-closed on the host sequence', async () => 
     session: { sessionId: 'sess-delete' },
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const hostEvents = collectEvents(host, undefined)
 
-  await host.deleteSession('sess-delete')
+  await host.deleteSession(agent.agentId, 'sess-delete')
 
-  const announce = hostEvents.find((event) => event.type === 'session-closed')
-  expect(announce?.payload).toEqual({
+  const projection = hostEvents.find(
+    (event) =>
+      event.type === 'session-updated' &&
+      event.payload.sessionId === 'sess-delete' &&
+      event.payload.status === 'deleted',
+  )
+  expect(projection?.payload).toMatchObject({
     sessionId: 'sess-delete',
     agentId: agent.agentId,
-    status: 'closed',
+    status: 'deleted',
   })
 })

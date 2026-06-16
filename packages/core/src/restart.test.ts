@@ -9,6 +9,8 @@ import {
   diagnosticPayloads,
   fixtureDefinition,
   rejectionOf,
+  resumeParams,
+  sessionParams,
   trackHost,
   waitFor,
 } from './test-harness.ts'
@@ -53,7 +55,7 @@ async function crashSession(options: HostOptions, scenario: FixtureScenario) {
   const host = trackHost(createAcpHost(options))
   const { definition, scenarioPath } = await fixtureDefinition(scenario)
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const sessionEvents = collectEvents(host, created.sessionId)
   const hostEvents = collectEvents(host, undefined)
@@ -90,19 +92,15 @@ test('restart never: crash is terminal, session stays disconnected', async () =>
   ).toBeGreaterThan(0)
 })
 
-test('on-crash restart with loadSession recovers the session as active(resumed) without duplicating history', async () => {
+test('on-crash restart with resumeSession recovers the session as active(resumed) without duplicating history', async () => {
   const { host, agentId, sessionId, sessionEvents, hostEvents } =
     await crashSession(
       { restart: 'on-crash', restartBackoff: tinyBackoff },
       crashTurnScenario({
-        initialize: { agentCapabilities: { loadSession: true } },
-        loadSession: {
-          replay: [
-            {
-              sessionUpdate: 'agent_message_chunk',
-              content: { type: 'text', text: 'before-crash' },
-            },
-          ],
+        initialize: {
+          agentCapabilities: {
+            sessionCapabilities: { resume: {} },
+          },
         },
       }),
     )
@@ -140,7 +138,7 @@ test('on-crash restart with loadSession recovers the session as active(resumed) 
   expect(payloads.map((p) => p.restartCount)).toEqual([0, 0, 0, 1, 1, 1, 0])
 })
 
-test('on-crash restart without loadSession capability keeps the session disconnected', async () => {
+test('on-crash restart without resumeSession capability keeps the session disconnected', async () => {
   const { host, agentId, sessionId, hostEvents } = await crashSession(
     { restart: 'on-crash', restartBackoff: tinyBackoff },
     crashTurnScenario(),
@@ -155,31 +153,33 @@ test('on-crash restart without loadSession capability keeps the session disconne
   expect(host.getSession(sessionId)?.status).toBe('disconnected')
 })
 
-test('session/load failure during auto recovery keeps the session disconnected with a diagnostic', async () => {
+test('session/resume failure during auto recovery keeps the session disconnected with a diagnostic', async () => {
   const { host, agentId, sessionId, hostEvents } = await crashSession(
     { restart: 'on-crash', restartBackoff: tinyBackoff },
     crashTurnScenario({
-      initialize: { agentCapabilities: { loadSession: true } },
-      loadSession: { error: { code: -32603, message: 'load boom' } },
+      initialize: {
+        agentCapabilities: { sessionCapabilities: { resume: {} } },
+      },
+      resumeSession: { error: { code: -32603, message: 'resume boom' } },
     }),
   )
 
   await waitFor(() => host.getAgent(agentId)?.status === 'ready')
   await waitFor(
-    () => diagnosticPayloads(hostEvents, 'session/load-failed').length !== 0,
+    () => diagnosticPayloads(hostEvents, 'session/resume-failed').length !== 0,
   )
 
   expect(host.getAgent(agentId)?.status).toBe('ready')
   expect(host.getSession(sessionId)?.status).toBe('disconnected')
-  const failed = diagnosticPayloads(hostEvents, 'session/load-failed')[0]
+  const failed = diagnosticPayloads(hostEvents, 'session/resume-failed')[0]
   expect(failed).toMatchObject({
     level: 'warn',
     sessionId,
-    message: expect.stringContaining('load boom'),
+    message: expect.stringContaining('resume boom'),
   })
 })
 
-test('explicit loadSession failure rejects, settles disconnected, and a later load fully recovers', async () => {
+test('explicit loadSession failure rejects without mutating the existing session, and a later load fully recovers', async () => {
   const host = trackHost(createAcpHost())
   const hostEvents = collectEvents(host, undefined)
   const mcpServers = [{ name: 'svc', command: '/bin/echo', args: [], env: [] }]
@@ -211,22 +211,28 @@ test('explicit loadSession failure rejects, settles disconnected, and a later lo
     ],
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const sessionId = created.sessionId
   const sessionEvents = collectEvents(host, sessionId)
 
-  const error = await rejectionOf(host.loadSession(agent.agentId, sessionId))
+  const error = await rejectionOf(
+    host.loadSession(agent.agentId, sessionId, sessionParams('/tmp')),
+  )
   expect(error).toMatchObject({ message: expect.stringContaining('boom') })
-  expect(host.getSession(sessionId)?.status).toBe('disconnected')
+  expect(host.getSession(sessionId)?.status).toBe('active')
   expect(diagnosticPayloads(hostEvents, 'session/load-failed')).toHaveLength(1)
   expect(sessionStatusPayloads(sessionEvents).map((p) => p.status)).toEqual([
     'active',
     'resuming',
-    'disconnected',
+    'active',
   ])
 
-  await host.loadSession(agent.agentId, sessionId, { mcpServers })
+  await host.loadSession(
+    agent.agentId,
+    sessionId,
+    sessionParams('/tmp', { mcpServers }),
+  )
   expect(host.getSession(sessionId)?.status).toBe('active')
   expect(sessionStatusPayloads(sessionEvents).at(-1)).toEqual({
     status: 'active',
@@ -239,7 +245,11 @@ test('explicit loadSession failure rejects, settles disconnected, and a later lo
   )
   expect(chunks).toHaveLength(1)
 
-  await host.resumeSession(sessionId)
+  await host.resumeSession(
+    agent.agentId,
+    sessionId,
+    resumeParams('/tmp', { mcpServers }),
+  )
   expect(host.getSession(sessionId)?.status).toBe('active')
 })
 

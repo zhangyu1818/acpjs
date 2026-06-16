@@ -222,6 +222,11 @@ turn's `stopReason` (or a `session/cancel` notification) decides that.
   `newSession` throws `auth_required` until any `authenticate` call succeeds,
   after which it is allowed through.
 
+  This is only a fixture-agent behavior for testing raw ACP agent auth errors.
+  acpjs itself does not expose login/logout APIs or model auth state; host/client
+  callers receive the agent error and configure their local agent outside acpjs
+  before retrying.
+
   ```ts
   const scenario: FixtureScenario = {
     initialize: { authMethods: [{ id: 'oauth', name: 'OAuth' }] },

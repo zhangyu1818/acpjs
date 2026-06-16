@@ -1,13 +1,14 @@
+import {
+  createInitialSessionState,
+  type MessageKind,
+  type ResolvedPermissionRequest,
+  type SessionState,
+} from './state'
 import { truncateUtf8Tail } from './terminal-output'
 
 import type { ContentChunk, ToolCallUpdate } from '@agentclientprotocol/sdk'
 
 import type { AcpEvent } from './events'
-import type {
-  MessageKind,
-  ResolvedPermissionRequest,
-  SessionState,
-} from './state'
 
 function appendChunk(
   state: SessionState,
@@ -160,7 +161,9 @@ export function reduce(state: SessionState, event: AcpEvent): SessionState {
     case 'session-status-change': {
       const payload = event.payload
       const terminalReset =
-        payload.status === 'disconnected' || payload.status === 'closed'
+        payload.status === 'disconnected' ||
+        payload.status === 'closed' ||
+        payload.status === 'deleted'
       return {
         ...state,
         connection: {
@@ -168,12 +171,11 @@ export function reduce(state: SessionState, event: AcpEvent): SessionState {
           resumed:
             payload.resumed ??
             (terminalReset ? false : state.connection.resumed),
-          authMethods:
-            payload.status === 'auth-required'
-              ? (payload.authMethods ?? state.connection.authMethods)
-              : null,
         },
       }
+    }
+    case 'session-reset': {
+      return createInitialSessionState(event.sessionId)
     }
     case 'permission-request-created': {
       const payload = event.payload
@@ -239,11 +241,10 @@ export function reduce(state: SessionState, event: AcpEvent): SessionState {
     }
     case 'unrecognized-update':
     case 'diagnostic':
-    case 'agent-status-change':
+    case 'agent-updated':
     case 'install-progress':
-    case 'auth-required':
-    case 'session-created':
-    case 'session-closed': {
+    case 'session-updated':
+    case 'permission-updated': {
       return state
     }
     default: {

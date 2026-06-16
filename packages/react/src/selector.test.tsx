@@ -10,7 +10,11 @@ import {
   useConnectionStatus,
   useSession,
 } from './index.ts'
-import { createTestHarness, type TestHarness } from './test-support.ts'
+import {
+  createTestHarness,
+  sessionParams,
+  type TestHarness,
+} from './test-support.ts'
 
 import type { ToolCallState } from '@acpjs/protocol'
 
@@ -25,7 +29,7 @@ async function spawnSession(harness: TestHarness): Promise<void> {
       id: 'a',
       command: 'node',
     })
-    await agent.sessions.create({ cwd: '/tmp' })
+    await agent.sessions.create(sessionParams())
   })
 }
 
@@ -204,8 +208,8 @@ test('list-hook selector reads stay value-identical across host emits', async ()
     act(() => {
       harness.emitHost({
         agentId: 'agent-1',
-        type: 'agent-status-change',
-        payload: { status, restartCount: 0 },
+        type: 'agent-updated',
+        payload: { agentId: 'agent-1', status, restartCount: 0 },
       })
     })
   }

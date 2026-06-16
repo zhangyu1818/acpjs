@@ -9,6 +9,7 @@ import {
   collectEvents,
   diagnosticPayloads,
   fixtureDefinition,
+  sessionParams,
   trackHost,
 } from './test-harness.ts'
 
@@ -36,7 +37,7 @@ async function promptedSession(storage?: StorageAdapter) {
     ],
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   return { host, agentId: agent.agentId, sessionId: created.sessionId }
 }

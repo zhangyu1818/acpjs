@@ -1,6 +1,6 @@
 import {
   ACP_ERROR_CODES,
-  ACP_RPC_METHODS,
+  ACPJS_HOST_RPC_METHODS,
   type AgentDefinition,
   type EnvelopeEndpoint,
   type ErrorObject,
@@ -67,7 +67,7 @@ function toErrorObject(error: unknown): ErrorObject {
 export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
   const inboundHandlers = new Set<InboundHandler>()
   const outstanding = new Map<string, OutstandingPermission>()
-  const watched = new Set<string>()
+  let unsubscribePermissions: (() => void) | undefined
 
   function notify(entry: OutstandingPermission): void {
     for (const handler of inboundHandlers) {
@@ -83,25 +83,26 @@ export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
     }
   }
 
-  function watchSession(sessionId: string): void {
-    if (watched.has(sessionId)) return
-    watched.add(sessionId)
-    host.subscribe(sessionId, 0, (event) => {
-      if (event.type === 'permission-request-created') {
-        const requestId = event.payload.requestId
+  function watchPermissions(): void {
+    if (unsubscribePermissions) return
+    unsubscribePermissions = host.subscribe(undefined, 0, (event) => {
+      if (event.type !== 'permission-updated') return
+      if (event.payload.status === 'pending') {
         const entry: OutstandingPermission = {
           request: {
-            id: requestId,
+            id: event.payload.requestId,
             kind: 'permission',
-            payload: { ...event.payload, sessionId },
+            payload: event.payload,
           },
           notified: new Set(),
         }
-        outstanding.set(requestId, entry)
+        outstanding.set(event.payload.requestId, entry)
         queueMicrotask(() => {
-          if (outstanding.get(requestId) === entry) notify(entry)
+          if (outstanding.get(event.payload.requestId) === entry) {
+            notify(entry)
+          }
         })
-      } else if (event.type === 'permission-request-resolved') {
+      } else {
         outstanding.delete(event.payload.requestId)
       }
     })
@@ -111,10 +112,10 @@ export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
     const params = request.params as {
       definition?: AgentDefinition
       agentId?: string
-      methodId?: string
       sessionId?: string
       cwd?: string
       mcpServers?: McpServer[]
+      additionalDirectories?: string[]
       cursor?: string
       prompt?: ContentBlock[]
       modeId?: string
@@ -124,10 +125,10 @@ export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
     const {
       definition,
       agentId,
-      methodId,
       sessionId,
       cwd,
       mcpServers,
+      additionalDirectories,
       cursor,
       prompt,
       modeId,
@@ -135,91 +136,95 @@ export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
       value,
     } = params
     switch (request.method) {
-      case ACP_RPC_METHODS.spawnAgent: {
+      case ACPJS_HOST_RPC_METHODS.spawnAgent: {
         return host.spawnAgent(requireParam(definition, 'definition'))
       }
-      case ACP_RPC_METHODS.authenticate: {
-        await host.authenticate(
-          requireParam(agentId, 'agentId'),
-          requireParam(methodId, 'methodId'),
-        )
-        return null
-      }
-      case ACP_RPC_METHODS.logout: {
-        await host.logout(requireParam(agentId, 'agentId'))
-        return null
-      }
-      case ACP_RPC_METHODS.createSession: {
+      case ACPJS_HOST_RPC_METHODS.createSession: {
         const result = await host.createSession(
           requireParam(agentId, 'agentId'),
           {
             cwd: requireParam(cwd, 'cwd'),
-            ...(mcpServers === undefined ? {} : { mcpServers }),
+            mcpServers: requireParam(mcpServers, 'mcpServers'),
+            additionalDirectories: requireParam(
+              additionalDirectories,
+              'additionalDirectories',
+            ),
           },
         )
-        if (result.status === 'active') watchSession(result.sessionId)
         return result
       }
-      case ACP_RPC_METHODS.loadSession: {
+      case ACPJS_HOST_RPC_METHODS.loadSession: {
         const id = requireParam(sessionId, 'sessionId')
         await host.loadSession(requireParam(agentId, 'agentId'), id, {
-          ...(cwd === undefined ? {} : { cwd }),
-          ...(mcpServers === undefined ? {} : { mcpServers }),
+          cwd: requireParam(cwd, 'cwd'),
+          mcpServers: requireParam(mcpServers, 'mcpServers'),
+          additionalDirectories: requireParam(
+            additionalDirectories,
+            'additionalDirectories',
+          ),
         })
-        watchSession(id)
         return null
       }
-      case ACP_RPC_METHODS.listSessions: {
+      case ACPJS_HOST_RPC_METHODS.listSessions: {
         return host.listSessions(requireParam(agentId, 'agentId'), {
           ...(cursor === undefined ? {} : { cursor }),
           ...(cwd === undefined ? {} : { cwd }),
         })
       }
-      case ACP_RPC_METHODS.resumeSession: {
+      case ACPJS_HOST_RPC_METHODS.resumeSession: {
         const id = requireParam(sessionId, 'sessionId')
-        await host.resumeSession(id)
-        watchSession(id)
+        await host.resumeSession(requireParam(agentId, 'agentId'), id, {
+          cwd: requireParam(cwd, 'cwd'),
+          ...(mcpServers === undefined ? {} : { mcpServers }),
+          additionalDirectories: requireParam(
+            additionalDirectories,
+            'additionalDirectories',
+          ),
+        })
         return null
       }
-      case ACP_RPC_METHODS.deleteSession: {
-        await host.deleteSession(requireParam(sessionId, 'sessionId'))
+      case ACPJS_HOST_RPC_METHODS.deleteSession: {
+        await host.deleteSession(
+          requireParam(agentId, 'agentId'),
+          requireParam(sessionId, 'sessionId'),
+        )
         return null
       }
-      case ACP_RPC_METHODS.prompt: {
+      case ACPJS_HOST_RPC_METHODS.prompt: {
         return host.prompt(
           requireParam(sessionId, 'sessionId'),
           requireParam(prompt, 'prompt'),
         )
       }
-      case ACP_RPC_METHODS.cancel: {
+      case ACPJS_HOST_RPC_METHODS.cancel: {
         await host.cancel(requireParam(sessionId, 'sessionId'))
         return null
       }
-      case ACP_RPC_METHODS.closeSession: {
+      case ACPJS_HOST_RPC_METHODS.closeSession: {
         await host.closeSession(requireParam(sessionId, 'sessionId'))
         return null
       }
-      case ACP_RPC_METHODS.setMode: {
+      case ACPJS_HOST_RPC_METHODS.setMode: {
         await host.setMode(
           requireParam(sessionId, 'sessionId'),
           requireParam(modeId, 'modeId'),
         )
         return null
       }
-      case ACP_RPC_METHODS.setConfigOption: {
+      case ACPJS_HOST_RPC_METHODS.setConfigOption: {
         return host.setConfigOption(
           requireParam(sessionId, 'sessionId'),
           requireParam(configId, 'configId'),
           requireParam(value, 'value'),
         )
       }
-      case ACP_RPC_METHODS.getAllSessions: {
+      case ACPJS_HOST_RPC_METHODS.getAllSessions: {
         return host.getSessions()
       }
-      case ACP_RPC_METHODS.restoreSessions: {
+      case ACPJS_HOST_RPC_METHODS.restoreSessions: {
         return host.restoreSessions()
       }
-      case ACP_RPC_METHODS.listAgents: {
+      case ACPJS_HOST_RPC_METHODS.listAgents: {
         return host.getAgents()
       }
       default: {
@@ -241,12 +246,23 @@ export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
       }
     },
     subscribe(params, onEvent) {
-      return host.subscribe(params.sessionId, params.fromSeq, onEvent)
+      if (params.sessionId !== undefined) {
+        return host.subscribe(params.sessionId, params.fromSeq, onEvent)
+      }
+      return host.subscribe(undefined, params.fromSeq, onEvent)
     },
     onInboundRequest(handler) {
+      watchPermissions()
       inboundHandlers.add(handler)
       for (const entry of outstanding.values()) notify(entry)
-      return () => inboundHandlers.delete(handler)
+      return () => {
+        inboundHandlers.delete(handler)
+        if (inboundHandlers.size === 0) {
+          unsubscribePermissions?.()
+          unsubscribePermissions = undefined
+          outstanding.clear()
+        }
+      }
     },
     async respondInbound(response) {
       host.respondPermission(

@@ -68,23 +68,24 @@ reference unchanged for events it does not reduce).
 ### Event model
 
 - `AcpEvent` — the closed discriminated union of every event, equal to
-  `AcpSessionEvent | AcpHostEvent` (18 session events + 6 host events).
+  `AcpSessionEvent | AcpHostEvent` (19 session events + 5 host events).
 - Member interfaces, e.g. `UserMessageChunkEvent`, `AgentMessageChunkEvent`,
   `AgentThoughtChunkEvent`, `ToolCallEvent`, `ToolCallUpdateEvent`, `PlanEvent`,
   `AvailableCommandsUpdateEvent`, `CurrentModeUpdateEvent`,
   `SessionConfigInitEvent`, `ConfigOptionsUpdateEvent`, `SessionInfoUpdateEvent`,
   `UsageUpdateEvent`, `PromptFinishedEvent`, `SessionStatusChangeEvent`,
-  `PermissionRequestCreatedEvent`, `PermissionRequestResolvedEvent`,
-  `TerminalOutputEvent`, `UnrecognizedUpdateEvent`, `AgentStatusChangeEvent`,
-  `InstallProgressEvent`, `AuthRequiredEvent`, `DiagnosticEvent`,
-  `SessionCreatedEvent`, `SessionClosedEvent`.
+  `SessionResetEvent`, `PermissionRequestCreatedEvent`,
+  `PermissionRequestResolvedEvent`, `TerminalOutputEvent`,
+  `UnrecognizedUpdateEvent`, `AgentUpdatedEvent`, `SessionUpdatedEvent`,
+  `PermissionUpdatedEvent`, `InstallProgressEvent`, `DiagnosticEvent`.
 - Payload types: `SessionConfigInitPayload`, `PromptFinishedPayload`,
-  `SessionStatusChangePayload`, `AgentStatusChangePayload`, `AuthRequiredPayload`,
+  `SessionStatusChangePayload`, `SessionResetPayload`,
   `PermissionRequestCreatedPayload`, `PermissionRequestResolvedPayload`,
-  `TerminalOutputPayload`, `InstallProgressPayload`, `DiagnosticPayload`,
-  `SessionAnnouncePayload`, `UnrecognizedUpdatePayload`.
+  `HostPermissionSnapshot`, `TerminalOutputPayload`, `InstallProgressPayload`,
+  `DiagnosticPayload`, `UnrecognizedUpdatePayload`.
 - Enums and aliases: `SessionStatus`, `AgentStatus`, `AgentExitReason`,
-  `InstallStage`, `DiagnosticLevel`, `AcpEventExtensions`.
+  `InstallStage`, `DiagnosticLevel`, `AcpEventExtensions`,
+  `AcpHostProjectionEvent`, `AcpHostTelemetryEvent`.
 
 Payloads reuse SDK protocol types. The top-level `_meta` field is removed at the
 type level (see implementation-defined notes); it surfaces on the envelope as
@@ -113,16 +114,17 @@ type level (see implementation-defined notes); it surfaces on the envelope as
 - `InboundRequest.kind` is an open string with one known member, `'permission'`
   (typed as `'permission' | (string & {})`).
 - `ACP_ERROR_CODES` — frozen error-code constants in the `acpjs/*` namespace
-  (9 codes: `config-invalid`, `prompt-in-flight`, `already-answered`,
-  `session-closed`, `agent-exited`, `capability-unsupported`, `auth-required`,
-  `agent-error`, `transport-closed`), plus the `AcpErrorCode` type and the
+  (8 codes: `config-invalid`, `prompt-in-flight`, `already-answered`,
+  `session-closed`, `agent-exited`, `capability-unsupported`, `agent-error`,
+  `transport-closed`), plus the `AcpErrorCode` type and the
   `isAcpErrorCode(value)` guard.
 
 ### Transport contract
 
 - `Transport` — `connect(handlers)`, `request(request)`,
   `subscribe(params, onEvent)`, `respondInbound(response)`, `close()`.
-- `TransportHandlers` — `onInboundRequest` + `onLifecycle`.
+- `TransportHandlers` — `onInboundRequest` + `onLifecycle` +
+  optional `onSubscriptionError(params, error)`.
 - `TransportLifecycleEvent` — `connecting → connected → closed`, with an
   optional `error` on the terminating path.
 - `TransportSubscribeParams` — optional `sessionId` + required `fromSeq`.
@@ -138,17 +140,18 @@ transport obligation; a new connection backfills using `fromSeq`.
 
 Shared by `@acpjs/core` and `@acpjs/client` to avoid duplicated literals.
 
-- `ACP_RPC_METHODS` — frozen RPC method-name constants
-  (`agents/spawn|authenticate|logout|list`,
+- `ACPJS_HOST_RPC_METHODS` — frozen RPC method-name constants
+  (`agents/spawn|list`,
   `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`),
   pinned by tests, plus the `AcpRpcMethod` type.
 - Shared payload shapes: `AgentDefinition`, `SessionConfigValue`,
-  `CreateSessionResult`, `AgentSnapshotWire`, `SessionSnapshotWire`.
+  `CreateOrLoadSessionParams`, `ResumeSessionParams`, `CreateSessionResult`,
+  `AgentCapabilitiesWire`, `AgentSnapshotWire`, `SessionSnapshotWire`.
 
 ### SDK protocol re-exports
 
-Type-only, for contract consumers: `AgentCapabilities`, `AuthMethod`,
-`ContentBlock`, `ListSessionsResponse`, `McpServer`, `RequestPermissionOutcome`,
+Type-only, for contract consumers: `AgentCapabilities`, `ContentBlock`,
+`ListSessionsResponse`, `McpServer`, `RequestPermissionOutcome`,
 `SessionConfigOption`.
 
 ## Event types (closed union)
@@ -158,20 +161,23 @@ Session events carry `sessionId` and an in-session `seq`:
 `tool-call`, `tool-call-update`, `plan`, `available-commands-update`,
 `current-mode-update`, `session-config-init`, `config-options-update`,
 `session-info-update`, `usage-update`, `prompt-finished`,
-`session-status-change`, `permission-request-created`,
+`session-status-change`, `session-reset`, `permission-request-created`,
 `permission-request-resolved`, `terminal-output`, `unrecognized-update`.
 
-Host events carry a host-level `seq`:
+Host events carry a host-level `seq`. `AcpHostProjectionEvent` is the product
+state projection subset:
 
-- `agent-status-change` — top-level `agentId`; payload includes `restartCount`.
+- `agent-updated` — top-level `agentId`; payload is the full
+  `AgentSnapshotWire`.
+- `session-updated` — full `SessionSnapshotWire` session projection.
+- `permission-updated` — host-level permission pending/answered/superseded
+  projection.
+
+`AcpHostTelemetryEvent` is the non-state telemetry subset:
+
 - `install-progress` — top-level `agentId`.
-- `auth-required` — top-level `agentId`; payload carries `agentId` and the
-  available `authMethods`.
 - `diagnostic` — `agentId` optional (registry-scope diagnostics have no owning
   agent).
-- `session-created`, `session-closed` — session announcements with no top-level
-  `agentId`/`sessionId`; the session context lives in `SessionAnnouncePayload`,
-  enabling cross-connection / cross-window discovery.
 
 ## Implementation-defined notes
 
@@ -200,8 +206,10 @@ Host events carry a host-level `seq`:
   `usage` is absent, `lastTurnUsage` is cleared (it reflects only the most recent
   turn).
 - `session-status-change`: the `resumed` flag is sticky until the next
-  `disconnected`/`closed`, which resets it. `authMethods` are retained only in
-  the `auth-required` status and cleared in every other status.
+  `disconnected`/`closed`/`deleted`, which resets it.
+- `AgentCapabilitiesWire` is an explicit stable ACP capability projection used
+  by acpjs. It intentionally does not mirror SDK experimental/auth/provider
+  fields that are outside the acpjs product contract.
 - `current-mode-update` arriving before any mode state synthesizes
   `{ currentModeId, availableModes: [] }`.
 - `diagnostic` agent attribution is expressed solely by the envelope `agentId`
@@ -214,13 +222,11 @@ Host events carry a host-level `seq`:
 - The reducer returns the input state reference unchanged for
   `unrecognized-update`, `diagnostic`, and all host events (they do not
   participate in reduction and never throw).
-- The error-code namespace extends the base error codes with three
+- The error-code namespace extends the base error codes with two
   contract-level codes:
-  `acpjs/auth-required` (the facade expressing missing authentication;
-  `data.authMethods` is passed through), `acpjs/agent-error` (an agent-side
-  JSON-RPC error tunneled across the envelope, with the original error in
-  `data`), and `acpjs/transport-closed` (a call rejected after the transport
-  closed; `retryable: true`).
+  `acpjs/agent-error` (an agent-side JSON-RPC error tunneled across the
+  envelope, with the original error in `data`) and `acpjs/transport-closed` (a
+  call rejected after the transport closed; `retryable: true`).
 - Terminal accumulation cap: `reduce` enforces a hard **1 MiB** byte limit on a
   single terminal's `output`. On overflow it discards from the oldest end (the
   head of the string) along UTF-8 character boundaries via `truncateUtf8Tail`,

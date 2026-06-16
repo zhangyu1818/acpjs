@@ -1,10 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 
 import { truncateUtf8Tail, type TerminalOutputPayload } from '@acpjs/protocol'
+import { RequestError } from '@agentclientprotocol/sdk'
 
 import type { TerminalHandler } from './options.ts'
 
 interface TerminalState {
+  sessionId: string
+  terminalId: string
   proc: ChildProcess
   output: string
   truncated: boolean
@@ -34,18 +38,30 @@ export function createDefaultTerminalHandler(
   emit?: (sessionId: string, payload: TerminalOutputPayload) => void,
 ): Required<TerminalHandler> {
   const terminals = new Map<string, TerminalState>()
-  let counter = 0
 
-  function requireTerminal(terminalId: string): TerminalState {
+  function requireTerminal(
+    sessionId: string,
+    terminalId: string,
+  ): TerminalState {
     const state = terminals.get(terminalId)
-    if (!state) throw new Error(`unknown terminal: ${terminalId}`)
+    if (!state) {
+      throw RequestError.invalidParams(
+        { terminalId },
+        `unknown terminal: ${terminalId}`,
+      )
+    }
+    if (state.sessionId !== sessionId) {
+      throw RequestError.invalidParams(
+        { terminalId, sessionId },
+        `terminal ${terminalId} belongs to another session`,
+      )
+    }
     return state
   }
 
   return {
     async createTerminal(params) {
-      counter += 1
-      const terminalId = `term-${counter}`
+      const terminalId = randomUUID()
       const env = { ...process.env }
       for (const variable of params.env ?? []) {
         env[variable.name] = variable.value
@@ -56,20 +72,14 @@ export function createDefaultTerminalHandler(
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       const state: TerminalState = {
+        sessionId: params.sessionId,
+        terminalId,
         proc,
         output: '',
         truncated: false,
         limit: params.outputByteLimit ?? undefined,
         exit: undefined,
         exited: new Promise((resolvePromise) => {
-          proc.once('error', () => {
-            state.exit = { exitCode: -1, signal: null }
-            emit?.(params.sessionId, {
-              terminalId,
-              exit: exitStatus(state.exit),
-            })
-            resolvePromise(state.exit)
-          })
           proc.once('exit', (exitCode, signal) => {
             state.exit = { exitCode, signal }
             emit?.(params.sessionId, {
@@ -92,10 +102,19 @@ export function createDefaultTerminalHandler(
       proc.stdout.on('data', append)
       proc.stderr.on('data', append)
       terminals.set(terminalId, state)
+      try {
+        await new Promise<void>((resolvePromise, rejectPromise) => {
+          proc.once('spawn', () => resolvePromise())
+          proc.once('error', rejectPromise)
+        })
+      } catch (error) {
+        terminals.delete(terminalId)
+        throw error
+      }
       return { terminalId }
     },
     async terminalOutput(params) {
-      const state = requireTerminal(params.terminalId)
+      const state = requireTerminal(params.sessionId, params.terminalId)
       return {
         output: state.output,
         truncated: state.truncated,
@@ -103,20 +122,27 @@ export function createDefaultTerminalHandler(
       }
     },
     async waitForTerminalExit(params) {
-      const state = requireTerminal(params.terminalId)
+      const state = requireTerminal(params.sessionId, params.terminalId)
       const exit = await state.exited
       return exitStatus(exit)
     },
     async killTerminal(params) {
-      const state = requireTerminal(params.terminalId)
+      const state = requireTerminal(params.sessionId, params.terminalId)
       if (state.exit === undefined) state.proc.kill('SIGKILL')
       return {}
     },
     async releaseTerminal(params) {
-      const state = requireTerminal(params.terminalId)
+      const state = requireTerminal(params.sessionId, params.terminalId)
       if (state.exit === undefined) state.proc.kill('SIGKILL')
       terminals.delete(params.terminalId)
       return {}
+    },
+    cleanupSession(sessionId) {
+      for (const [terminalId, state] of terminals) {
+        if (state.sessionId !== sessionId) continue
+        if (state.exit === undefined) state.proc.kill('SIGKILL')
+        terminals.delete(terminalId)
+      }
     },
   }
 }

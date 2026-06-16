@@ -5,7 +5,12 @@ import {
   createHostEndpoint,
   type StorageAdapter,
 } from './index.ts'
-import { fixtureDefinition, trackHost, waitFor } from './test-harness.ts'
+import {
+  fixtureDefinition,
+  sessionParams,
+  trackHost,
+  waitFor,
+} from './test-harness.ts'
 
 import type { FixtureScenario } from '@acpjs/fixture-agent'
 import type { AcpEvent, InboundRequest, RpcResponse } from '@acpjs/protocol'
@@ -51,7 +56,7 @@ async function spawnAndCreate(scenario: FixtureScenario) {
   const created = await endpoint.request({
     id: 'r-create',
     method: 'sessions/create',
-    params: { agentId, cwd: '/tmp' },
+    params: { agentId, ...sessionParams('/tmp') },
   })
   if (!created.ok) throw new Error('create failed')
   const sessionId = (created.result as { sessionId: string }).sessionId
@@ -139,8 +144,15 @@ test('requests missing required params are rejected with acpjs/config-invalid at
 
   const cases: { method: string; params: Record<string, unknown> }[] = [
     { method: 'agents/spawn', params: {} },
-    { method: 'agents/authenticate', params: { methodId: 'm' } },
     { method: 'sessions/create', params: { cwd: '/tmp' } },
+    {
+      method: 'sessions/resume',
+      params: {
+        agentId: 'agent-1',
+        sessionId: 's',
+        additionalDirectories: [],
+      },
+    },
     { method: 'sessions/prompt', params: { prompt: [] } },
     { method: 'sessions/setMode', params: { sessionId: 's' } },
     {
@@ -265,7 +277,7 @@ test('non-AcpError failures map to acpjs/agent-error envelopes, protocol errors 
     async spawnAgent() {
       throw new TypeError('native boom')
     },
-    async authenticate() {
+    async createSession() {
       const error = new Error('agent said no') as Error & {
         code: number
         data: unknown
@@ -294,8 +306,13 @@ test('non-AcpError failures map to acpjs/agent-error envelopes, protocol errors 
 
   const protocol = await endpoint.request({
     id: 'r-protocol',
-    method: 'agents/authenticate',
-    params: { agentId: 'a', methodId: 'm' },
+    method: 'sessions/create',
+    params: {
+      agentId: 'a',
+      cwd: '/tmp',
+      mcpServers: [],
+      additionalDirectories: [],
+    },
   })
   expect(protocol).toEqual({
     id: 'r-protocol',
@@ -320,8 +337,11 @@ test('discovery queries sessions/getAll, agents/list and sessions/restore round-
   const storage: StorageAdapter = {
     appendEvent() {},
     appendMeta() {},
-    listSessions: () => [{ sessionId: 'sess-old' }],
+    listSessions: () => [
+      { sessionId: 'sess-old', cwd: '', additionalDirectories: [] },
+    ],
     loadEvents: () => [stored],
+    replaceSession() {},
   }
   const host = trackHost(createAcpHost({ storage }))
   const endpoint = createHostEndpoint(host)
@@ -329,7 +349,7 @@ test('discovery queries sessions/getAll, agents/list and sessions/restore round-
     session: { sessionId: 'sess-live' },
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
 
   const sessions = await endpoint.request({
@@ -346,6 +366,8 @@ test('discovery queries sessions/getAll, agents/list and sessions/restore round-
         status: 'active',
         agentId: agent.agentId,
         cwd: '/tmp',
+        mcpServers: [],
+        additionalDirectories: [],
         agentDefinitionId: 'fixture',
       },
     ],
@@ -370,10 +392,19 @@ test('discovery queries sessions/getAll, agents/list and sessions/restore round-
   expect(restored).toEqual({
     id: 'r-restore',
     ok: true,
-    result: [{ sessionId: 'sess-old', status: 'disconnected' }],
+    result: [
+      {
+        sessionId: 'sess-old',
+        status: 'disconnected',
+        cwd: '',
+        additionalDirectories: [],
+      },
+    ],
   })
   expect(host.getSessions()).toContainEqual({
     sessionId: 'sess-old',
     status: 'disconnected',
+    cwd: '',
+    additionalDirectories: [],
   })
 })

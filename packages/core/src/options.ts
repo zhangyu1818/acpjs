@@ -15,7 +15,6 @@ import type {
   ReleaseTerminalResponse,
   TerminalOutputRequest,
   TerminalOutputResponse,
-  ToolKind,
   WaitForTerminalExitRequest,
   WaitForTerminalExitResponse,
   WriteTextFileRequest,
@@ -39,13 +38,6 @@ export interface RestartBackoff {
   maxMs: number
 }
 
-export type PermissionPolicyAction = 'allow' | 'reject' | 'ask'
-
-export interface PermissionPolicyRule {
-  kind?: ToolKind
-  action: PermissionPolicyAction
-}
-
 export interface FsHandler {
   readTextFile?(params: ReadTextFileRequest): Promise<ReadTextFileResponse>
   writeTextFile?(params: WriteTextFileRequest): Promise<WriteTextFileResponse>
@@ -65,13 +57,13 @@ export interface TerminalHandler {
   releaseTerminal?(
     params: ReleaseTerminalRequest,
   ): Promise<ReleaseTerminalResponse>
+  cleanupSession?(sessionId: string): void
 }
 
 export interface HostOptions {
   restart?: 'never' | 'on-crash'
   restartLimit?: number
   restartBackoff?: RestartBackoff
-  permissionPolicy?: PermissionPolicyRule[]
   storage?: StorageAdapter
   fs?: FsHandler
   terminal?: TerminalHandler
@@ -82,27 +74,22 @@ export interface ResolvedHostOptions {
   restart: 'never' | 'on-crash'
   restartLimit: number
   restartBackoff: RestartBackoff
-  permissionPolicy: readonly PermissionPolicyRule[]
   storage: StorageAdapter
   fs?: FsHandler
   terminal?: TerminalHandler
   killTimeoutMs: number
 }
 
-const POLICY_ACTIONS: ReadonlySet<string> = new Set(['allow', 'reject', 'ask'])
-
 function isPositiveNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
 }
 
-function isPolicyRule(value: unknown): value is PermissionPolicyRule {
-  if (typeof value !== 'object' || value === null) return false
-  const rule = value as { action?: unknown; kind?: unknown }
-  return (
-    typeof rule.action === 'string' &&
-    POLICY_ACTIONS.has(rule.action) &&
-    (rule.kind === undefined || typeof rule.kind === 'string')
-  )
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isFunction(value: unknown): value is (...args: never[]) => unknown {
+  return typeof value === 'function'
 }
 
 export function resolveHostOptions(raw: HostOptions = {}): ResolvedHostOptions {
@@ -132,15 +119,6 @@ export function resolveHostOptions(raw: HostOptions = {}): ResolvedHostOptions {
   ) {
     throw configInvalid('invalid restartBackoff')
   }
-  const permissionPolicy = candidate.permissionPolicy ?? []
-  if (!Array.isArray(permissionPolicy)) {
-    throw configInvalid('permissionPolicy must be an array')
-  }
-  for (const rule of permissionPolicy) {
-    if (!isPolicyRule(rule)) {
-      throw configInvalid('invalid permissionPolicy rule')
-    }
-  }
   const killTimeoutMs = candidate.killTimeoutMs ?? 5000
   if (!isPositiveNumber(killTimeoutMs)) {
     throw configInvalid('invalid killTimeoutMs')
@@ -150,9 +128,60 @@ export function resolveHostOptions(raw: HostOptions = {}): ResolvedHostOptions {
     typeof storage.appendEvent !== 'function' ||
     typeof storage.appendMeta !== 'function' ||
     typeof storage.listSessions !== 'function' ||
-    typeof storage.loadEvents !== 'function'
+    typeof storage.loadEvents !== 'function' ||
+    typeof storage.replaceSession !== 'function'
   ) {
     throw configInvalid('invalid storage adapter')
+  }
+  if (raw.fs !== undefined) {
+    if (!isObject(raw.fs)) throw configInvalid('invalid fs handler')
+    const fsHandler = raw.fs
+    if (
+      (fsHandler['readTextFile'] !== undefined &&
+        !isFunction(fsHandler['readTextFile'])) ||
+      (fsHandler['writeTextFile'] !== undefined &&
+        !isFunction(fsHandler['writeTextFile']))
+    ) {
+      throw configInvalid('invalid fs handler')
+    }
+  }
+  if (raw.terminal !== undefined) {
+    if (!isObject(raw.terminal)) throw configInvalid('invalid terminal handler')
+    const terminalHandler = raw.terminal
+    if (
+      (terminalHandler['createTerminal'] !== undefined &&
+        !isFunction(terminalHandler['createTerminal'])) ||
+      (terminalHandler['terminalOutput'] !== undefined &&
+        !isFunction(terminalHandler['terminalOutput'])) ||
+      (terminalHandler['waitForTerminalExit'] !== undefined &&
+        !isFunction(terminalHandler['waitForTerminalExit'])) ||
+      (terminalHandler['killTerminal'] !== undefined &&
+        !isFunction(terminalHandler['killTerminal'])) ||
+      (terminalHandler['releaseTerminal'] !== undefined &&
+        !isFunction(terminalHandler['releaseTerminal'])) ||
+      (terminalHandler['cleanupSession'] !== undefined &&
+        !isFunction(terminalHandler['cleanupSession']))
+    ) {
+      throw configInvalid('invalid terminal handler')
+    }
+    const terminalMethodCount = [
+      terminalHandler['createTerminal'],
+      terminalHandler['terminalOutput'],
+      terminalHandler['waitForTerminalExit'],
+      terminalHandler['killTerminal'],
+      terminalHandler['releaseTerminal'],
+    ].filter(isFunction).length
+    if (terminalMethodCount > 0 && terminalMethodCount < 5) {
+      throw configInvalid(
+        'terminal handler must implement every terminal method',
+      )
+    }
+    if (
+      terminalMethodCount === 5 &&
+      !isFunction(terminalHandler['cleanupSession'])
+    ) {
+      throw configInvalid('terminal handler must implement cleanupSession')
+    }
   }
   const resolved: ResolvedHostOptions = {
     restart,
@@ -162,11 +191,6 @@ export function resolveHostOptions(raw: HostOptions = {}): ResolvedHostOptions {
       factor: restartBackoff.factor,
       maxMs: restartBackoff.maxMs,
     }),
-    permissionPolicy: Object.freeze(
-      (permissionPolicy as PermissionPolicyRule[]).map((rule) =>
-        Object.freeze({ ...rule }),
-      ),
-    ),
     storage,
     ...(raw.fs ? { fs: raw.fs } : {}),
     ...(raw.terminal ? { terminal: raw.terminal } : {}),

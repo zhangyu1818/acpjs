@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 
 import {
-  AcpClientError,
   createAcpClient,
   type AcpAgent,
   type AcpClient,
@@ -10,7 +9,9 @@ import {
 import {
   createFakeHub,
   rejectionOf,
+  resumeParams,
   ScriptedError,
+  sessionParams,
   type FakeHub,
 } from './test-support.ts'
 
@@ -28,7 +29,7 @@ async function setup(): Promise<{
   }))
   const client = createAcpClient({ transport: hub.connection().transport })
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
   return { hub, client, agent, session }
 }
 
@@ -117,7 +118,7 @@ test('sessions.list, resume and delete map to their RPCs with capability errors 
     nextCursor: 'cursor-2',
   })
 
-  const resumed = await agent.sessions.resume('sess-1')
+  const resumed = await agent.sessions.resume('sess-1', resumeParams('/tmp'))
   expect(resumed.sessionId).toBe('sess-1')
 
   const error = await rejectionOf(agent.sessions.delete('sess-1'))
@@ -127,8 +128,11 @@ test('sessions.list, resume and delete map to their RPCs with capability errors 
     hub.requests.slice(2).map((request) => [request.method, request.params]),
   ).toEqual([
     ['sessions/list', { agentId: 'agent-1', cursor: 'cursor-1' }],
-    ['sessions/resume', { sessionId: 'sess-1' }],
-    ['sessions/delete', { sessionId: 'sess-1' }],
+    [
+      'sessions/resume',
+      { agentId: 'agent-1', sessionId: 'sess-1', ...resumeParams('/tmp') },
+    ],
+    ['sessions/delete', { agentId: 'agent-1', sessionId: 'sess-1' }],
   ])
 })
 
@@ -192,41 +196,5 @@ test('sessions.restore triggers host recovery over the sessions/restore RPC and 
   expect(hub.requests.at(-1)).toMatchObject({
     method: 'sessions/restore',
     params: {},
-  })
-})
-
-test('authenticate and logout map to agent RPCs', async () => {
-  const { hub, agent } = await setup()
-  hub.handle('agents/authenticate', () => null)
-  hub.handle('agents/logout', () => null)
-
-  await agent.authenticate('device')
-  await agent.logout()
-
-  expect(
-    hub.requests.slice(2).map((request) => [request.method, request.params]),
-  ).toEqual([
-    ['agents/authenticate', { agentId: 'agent-1', methodId: 'device' }],
-    ['agents/logout', { agentId: 'agent-1' }],
-  ])
-})
-
-test('create resolving auth-required rejects with acpjs/auth-required carrying authMethods', async () => {
-  const hub = createFakeHub()
-  hub.handle('agents/spawn', () => ({ agentId: 'agent-1' }))
-  hub.handle('sessions/create', () => ({
-    status: 'auth-required',
-    authMethods: [{ id: 'device', name: 'Device flow' }],
-  }))
-  const client = createAcpClient({ transport: hub.connection().transport })
-  const agent = await client.agents.spawn({ id: 'a', command: 'node' })
-
-  const error = await rejectionOf(agent.sessions.create({ cwd: '/tmp' }))
-
-  expect(error).toBeInstanceOf(AcpClientError)
-  expect(error).toMatchObject({
-    code: 'acpjs/auth-required',
-    data: { authMethods: [{ id: 'device', name: 'Device flow' }] },
-    retryable: true,
   })
 })

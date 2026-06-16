@@ -206,6 +206,45 @@ test('a subscribe that throws on the endpoint stays isolated and keeps the port 
   await rig.transport.close()
 })
 
+test('subscription errors are reported to transport handlers with the failed params', async () => {
+  const channel = new MessageChannel()
+  const fake = fakeEndpoint()
+  fake.endpoint.subscribe = () => {
+    const error = new Error('unknown session: missing') as Error & {
+      code: string
+      retryable: boolean
+    }
+    error.code = 'acpjs/session-closed'
+    error.retryable = false
+    throw error
+  }
+  wireEndpointToPort(fake.endpoint, asWirePort(channel.port1))
+  const transport = electronTransport({
+    requestPort: async () => channel.port2,
+  })
+  const subscriptionErrors: unknown[] = []
+  await transport.connect({
+    onInboundRequest() {},
+    onLifecycle() {},
+    onSubscriptionError(params, error) {
+      subscriptionErrors.push({ params, error })
+    },
+  })
+
+  transport.subscribe({ sessionId: 'missing', fromSeq: 7 }, () => {})
+
+  await vi.waitFor(() => expect(subscriptionErrors).toHaveLength(1))
+  expect(subscriptionErrors[0]).toEqual({
+    params: { sessionId: 'missing', fromSeq: 7 },
+    error: {
+      code: 'acpjs/session-closed',
+      message: 'unknown session: missing',
+      retryable: false,
+    },
+  })
+  await transport.close()
+})
+
 test('unsubscribe stops delivery and releases the endpoint subscription', async () => {
   const rig = await connectedRig()
   const received: number[] = []

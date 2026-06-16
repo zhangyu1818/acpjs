@@ -1,6 +1,7 @@
 import {
   ACP_ERROR_CODES,
   type AcpEvent,
+  type AcpEventExtensions,
   type AcpSessionEvent,
   type AgentExitReason,
   type AgentStatus,
@@ -13,16 +14,22 @@ import type { ChildProcess } from 'node:child_process'
 
 import type {
   AgentCapabilities,
-  AuthMethod,
   ClientSideConnection,
   McpServer,
   PermissionOption,
   RequestPermissionOutcome,
+  ToolCallUpdate,
 } from '@agentclientprotocol/sdk'
 
 import type { ResolvedAgentDefinition } from './options.ts'
 
 export type EventSubscriber = (event: AcpEvent) => void
+
+export interface BufferedSessionEvent {
+  type: AcpSessionEvent['type']
+  payload: unknown
+  extensions?: AcpEventExtensions
+}
 
 export interface AgentHandle {
   agentId: string
@@ -31,7 +38,6 @@ export interface AgentHandle {
   reason?: AgentExitReason
   exit: { code?: number; signal?: string } | undefined
   capabilities: AgentCapabilities | undefined
-  authMethods: AuthMethod[] | undefined
   restartCount: number
   proc: ChildProcess | undefined
   conn: ClientSideConnection | undefined
@@ -46,12 +52,17 @@ export interface SessionHandle {
   agentDefinitionId?: string
   status: SessionStatus
   cwd: string
-  mcpServers: McpServer[]
+  mcpServers?: McpServer[]
+  additionalDirectories: string[]
+  lifecycleOperation?: 'load' | 'resume' | 'close' | 'delete'
+  lifecycleOperationId?: number
+  loadReplay?: BufferedSessionEvent[]
+  title?: string | null
+  updatedAt?: string | null
   log: AcpSessionEvent[]
   nextSeq: number
   hasModes: boolean
   hasConfigOptions: boolean
-  suppressUpdates: boolean
   subscribers: Set<EventSubscriber>
 }
 
@@ -59,6 +70,8 @@ export interface PendingPermission {
   requestId: string
   sessionId: string
   agentId?: string
+  toolCall: ToolCallUpdate
+  options: PermissionOption[]
   settle: (
     status: 'answered' | 'superseded',
     outcome?: RequestPermissionOutcome,
@@ -95,16 +108,6 @@ export function isStructuredCloneable(value: unknown): boolean {
   } catch {
     return false
   }
-}
-
-export function pickOption(
-  options: PermissionOption[],
-  action: 'allow' | 'reject',
-): PermissionOption | undefined {
-  return (
-    options.find((option) => option.kind === `${action}_once`) ??
-    options.find((option) => option.kind === `${action}_always`)
-  )
 }
 
 export function capabilityEnabled(value: unknown): boolean {

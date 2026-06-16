@@ -45,7 +45,12 @@ async function runA(harness) {
     command: cfg.nodeBin,
     args: [cfg.cliPath, '--scenario', cfg.scenarioPath],
   })
-  const session = await agent.sessions.create({ cwd: cfg.cwd })
+  const session = await agent.sessions.create({
+    cwd: cfg.cwd,
+    mcpServers: [],
+    additionalDirectories: [],
+    permissionPolicy: [],
+  })
   const sessionId = session.getSnapshot().sessionId
   mark(`session:${sessionId}`)
   harness.signal('session', { sessionId })

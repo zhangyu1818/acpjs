@@ -21,16 +21,16 @@ const coveredEventTypes = {
   'usage-update': true,
   'prompt-finished': true,
   'session-status-change': true,
+  'session-reset': true,
   'permission-request-created': true,
   'permission-request-resolved': true,
   'terminal-output': true,
   'unrecognized-update': true,
-  'agent-status-change': true,
+  'agent-updated': true,
   'install-progress': true,
-  'auth-required': true,
   diagnostic: true,
-  'session-created': true,
-  'session-closed': true,
+  'session-updated': true,
+  'permission-updated': true,
 } satisfies Record<AcpEvent['type'], true>
 
 export const allEventTypes = Object.keys(
@@ -97,7 +97,7 @@ export const goldenExpectedState: SessionState = {
   },
   lastStopReason: 'end_turn',
   lastPromptError: null,
-  connection: { status: 'active', resumed: true, authMethods: null },
+  connection: { status: 'active', resumed: true },
   pendingPermissionRequests: [],
   terminals: {
     'term-1': {

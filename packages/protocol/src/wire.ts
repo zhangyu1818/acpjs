@@ -1,11 +1,10 @@
-import type { AgentCapabilities, AuthMethod } from '@agentclientprotocol/sdk'
+import type { McpServer } from '@agentclientprotocol/sdk'
 
-import type { AgentExitReason, AgentStatus, SessionStatus } from './events'
+import type { SessionStatus } from './domain'
+import type { AgentSnapshotWire, SessionSnapshotWire } from './snapshots'
 
-export const ACP_RPC_METHODS = Object.freeze({
+export const ACPJS_HOST_RPC_METHODS = Object.freeze({
   spawnAgent: 'agents/spawn',
-  authenticate: 'agents/authenticate',
-  logout: 'agents/logout',
   createSession: 'sessions/create',
   loadSession: 'sessions/load',
   listSessions: 'sessions/list',
@@ -22,7 +21,7 @@ export const ACP_RPC_METHODS = Object.freeze({
 } as const)
 
 export type AcpRpcMethod =
-  (typeof ACP_RPC_METHODS)[keyof typeof ACP_RPC_METHODS]
+  (typeof ACPJS_HOST_RPC_METHODS)[keyof typeof ACPJS_HOST_RPC_METHODS]
 
 export interface AgentDefinition {
   id: string
@@ -37,25 +36,28 @@ export type SessionConfigValue =
   | { type: 'boolean'; value: boolean }
   | { value: string }
 
-export type CreateSessionResult =
-  | { status: 'active'; sessionId: string }
-  | { status: 'auth-required'; authMethods: AuthMethod[] }
-
-export interface SessionSnapshotWire {
+export interface CreateSessionResult {
   sessionId: string
   status: SessionStatus
   agentId?: string
-  cwd?: string
+  cwd: string
+  mcpServers?: McpServer[]
+  additionalDirectories: string[]
   agentDefinitionId?: string
+  title?: string | null
+  updatedAt?: string | null
 }
 
-export interface AgentSnapshotWire {
-  agentId: string
-  status: AgentStatus
-  restartCount: number
-  reason?: AgentExitReason
-  exit?: { code?: number; signal?: string }
-  capabilities?: AgentCapabilities
-  authMethods?: AuthMethod[]
-  authRequired?: boolean
+export interface CreateOrLoadSessionParams {
+  cwd: string
+  mcpServers: McpServer[]
+  additionalDirectories: string[]
 }
+
+export interface ResumeSessionParams {
+  cwd: string
+  mcpServers?: McpServer[]
+  additionalDirectories: string[]
+}
+
+export type { AgentSnapshotWire, SessionSnapshotWire }

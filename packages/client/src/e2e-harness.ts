@@ -1,4 +1,4 @@
-import { createAcpHost, createHostEndpoint } from '@acpjs/core'
+import { createAcpHost, createHostEndpoint, type AcpHost } from '@acpjs/core'
 import {
   fixtureAgentCliPath,
   writeScenarioFile,
@@ -42,6 +42,7 @@ function checkedEndpoint(endpoint: EnvelopeEndpoint): EnvelopeEndpoint {
 export async function e2eClient(scenario: FixtureScenario): Promise<{
   client: AcpClient
   definition: AgentDefinition
+  host: AcpHost
   connectClient: () => AcpClient
 }> {
   const host = createAcpHost()
@@ -68,6 +69,7 @@ export async function e2eClient(scenario: FixtureScenario): Promise<{
       command: process.execPath,
       args: [fixtureAgentCliPath, '--scenario', scenarioPath],
     },
+    host,
     connectClient,
   }
 }

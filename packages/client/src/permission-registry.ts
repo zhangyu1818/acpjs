@@ -30,6 +30,7 @@ export function createPermissionRegistry(): PermissionRegistry {
       return () => listeners.delete(listener)
     },
     add(request) {
+      if (pending.has(request.requestId)) return
       pending.set(request.requestId, request)
       publish()
     },

@@ -7,6 +7,7 @@ import {
   diagnosticPayloads,
   fixtureDefinition,
   rejectionOf,
+  sessionParams,
   trackHost,
   waitFor,
 } from './test-harness.ts'
@@ -29,7 +30,6 @@ test('spawnAgent walks spawning → initializing → ready and caches initialize
   const { definition } = await fixtureDefinition({
     initialize: {
       agentCapabilities: { loadSession: true },
-      authMethods: [{ id: 'oauth', name: 'OAuth' }],
     },
   })
 
@@ -38,7 +38,6 @@ test('spawnAgent walks spawning → initializing → ready and caches initialize
   expect(agent.agentId).toMatch(/^agent-\d+$/)
   expect(agent.status).toBe('ready')
   expect(agent.capabilities).toEqual({ loadSession: true })
-  expect(agent.authMethods).toEqual([{ id: 'oauth', name: 'OAuth' }])
   expect(statuses(events)).toEqual(['spawning', 'initializing', 'ready'])
   const seqs = events.map((event) => event.seq)
   expect(seqs).toEqual(seqs.map((_, index) => index + 1))
@@ -168,7 +167,7 @@ test('dispose kills a slow agent with SIGKILL after the injected kill timeout', 
     ],
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const sessionEvents = collectEvents(host, created.sessionId)
   const pending = rejectionOf(

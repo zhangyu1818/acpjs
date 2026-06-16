@@ -14,6 +14,7 @@ import {
   collectEvents,
   diagnosticPayloads,
   fixtureDefinition,
+  sessionParams,
   trackHost,
   waitFor,
 } from './test-harness.ts'
@@ -39,7 +40,7 @@ async function runSession(storage: StorageAdapter) {
     ],
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const events = collectEvents(host, created.sessionId)
   await host.prompt(created.sessionId, [{ type: 'text', text: 'go' }])
@@ -59,12 +60,22 @@ test('memory storage appendMeta surfaces full meta from listSessions and never l
     sessionId: 'sess-a',
     agentDefinitionId: 'agent-x',
     cwd: '/work',
+    additionalDirectories: [],
   })
-  await storage.appendMeta({ sessionId: 'sess-b' })
+  await storage.appendMeta({
+    sessionId: 'sess-b',
+    cwd: '',
+    additionalDirectories: [],
+  })
 
   expect(await storage.listSessions()).toEqual([
-    { sessionId: 'sess-a', agentDefinitionId: 'agent-x', cwd: '/work' },
-    { sessionId: 'sess-b' },
+    {
+      sessionId: 'sess-a',
+      agentDefinitionId: 'agent-x',
+      cwd: '/work',
+      additionalDirectories: [],
+    },
+    { sessionId: 'sess-b', cwd: '', additionalDirectories: [] },
   ])
   const loaded = await storage.loadEvents('sess-a')
   expect(loaded.map((event) => event.type)).toEqual(['agent-message-chunk'])
@@ -77,13 +88,16 @@ test('createSession persists a session-meta record with agentDefinitionId and cw
     'agent-meta',
   )
   const agent = await host.spawnAgent(definition)
-  await host.createSession(agent.agentId, { cwd: '/tmp/work' })
+  await host.createSession(agent.agentId, sessionParams('/tmp/work'))
 
   expect(await host.options.storage.listSessions()).toEqual([
     {
       sessionId: 'sess-meta',
       agentDefinitionId: 'agent-meta',
       cwd: resolve('/tmp/work'),
+      mcpServers: [],
+      additionalDirectories: [],
+      lifecycle: 'open',
     },
   ])
   const persisted = await host.options.storage.loadEvents('sess-meta')
@@ -99,7 +113,7 @@ test('createSession persists a session-meta record in JSONL without polluting re
     'agent-jsonl',
   )
   const agent = await host.spawnAgent(definition)
-  await host.createSession(agent.agentId, { cwd: '/tmp/jwork' })
+  await host.createSession(agent.agentId, sessionParams('/tmp/jwork'))
 
   const reader = createJsonlStorage(file)
   const deadline = Date.now() + 5000
@@ -114,11 +128,38 @@ test('createSession persists a session-meta record in JSONL without polluting re
       sessionId: 'sess-jsonl-meta',
       agentDefinitionId: 'agent-jsonl',
       cwd: resolve('/tmp/jwork'),
+      mcpServers: [],
+      additionalDirectories: [],
+      lifecycle: 'open',
     },
   ])
   const replayed = await reader.loadEvents('sess-jsonl-meta')
   expect(replayed.length).toBeGreaterThan(0)
   expect(replayed.some((event) => 'kind' in event)).toBe(false)
+})
+
+test('closeSession waits for the JSONL tombstone meta before returning', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'acpjs-jsonl-close-'))
+  const file = join(dir, 'events.jsonl')
+  const host = trackHost(createAcpHost({ storage: createJsonlStorage(file) }))
+  const { definition } = await fixtureDefinition({
+    session: { sessionId: 'sess-jsonl-close' },
+  })
+  const agent = await host.spawnAgent(definition)
+  await host.createSession(agent.agentId, sessionParams('/tmp/closed'))
+
+  await host.closeSession('sess-jsonl-close')
+
+  expect(await createJsonlStorage(file).listSessions()).toEqual([
+    {
+      sessionId: 'sess-jsonl-close',
+      agentDefinitionId: 'fixture',
+      cwd: resolve('/tmp/closed'),
+      mcpServers: [],
+      additionalDirectories: [],
+      lifecycle: 'closed',
+    },
+  ])
 })
 
 test('appendMeta write failure produces a diagnostic without breaking the live stream (INV-5)', async () => {
@@ -130,6 +171,7 @@ test('appendMeta write failure produces a diagnostic without breaking the live s
     },
     listSessions: () => [],
     loadEvents: () => [],
+    replaceSession() {},
   }
   const host = trackHost(createAcpHost({ storage }))
   const hostEvents = collectEvents(host, undefined)
@@ -137,7 +179,7 @@ test('appendMeta write failure produces a diagnostic without breaking the live s
     session: { sessionId: 'sess-meta-fail' },
   })
   const agent = await host.spawnAgent(definition)
-  await host.createSession(agent.agentId, { cwd: '/tmp' })
+  await host.createSession(agent.agentId, sessionParams('/tmp'))
   host.subscribe('sess-meta-fail', 0, (event) =>
     events.push(event as AcpSessionEvent),
   )
@@ -160,6 +202,9 @@ test('a storage adapter that throws does not affect the live stream and yields d
     },
     listSessions: () => [],
     loadEvents: () => [],
+    replaceSession() {
+      throw new Error('replace disk on fire')
+    },
   }
   const { host, events } = await runSession(storage)
 
@@ -183,6 +228,9 @@ test('an async-rejecting storage adapter is reported without breaking the stream
     },
     listSessions: () => [],
     loadEvents: () => [],
+    async replaceSession() {
+      throw new Error('async replace failure')
+    },
   }
   const { host, events } = await runSession(storage)
 
@@ -217,6 +265,8 @@ test('JSONL storage persists events and a fresh host rebuilds the session as dis
       sessionId: 'sess-store',
       status: 'disconnected',
       cwd: resolve('/tmp'),
+      mcpServers: [],
+      additionalDirectories: [],
       agentDefinitionId: 'fixture',
     },
   ])
@@ -230,7 +280,7 @@ test('JSONL storage persists events and a fresh host rebuilds the session as dis
   expect(seqs).toEqual(seqs.map((_, index) => index + 1))
 })
 
-test('JSONL restore backfills cwd and agentDefinitionId from meta and loadSession needs no cwd', async () => {
+test('JSONL restore backfills cwd and agentDefinitionId and loadSession requires fresh config', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'acpjs-jsonl-restore-'))
   const file = join(dir, 'events.jsonl')
   const scenario = {
@@ -241,9 +291,10 @@ test('JSONL restore backfills cwd and agentDefinitionId from meta and loadSessio
   const host = trackHost(createAcpHost({ storage: createJsonlStorage(file) }))
   const { definition } = await fixtureDefinition(scenario, 'agent-restore')
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, {
-    cwd: '/tmp/restore',
-  })
+  const created = await host.createSession(
+    agent.agentId,
+    sessionParams('/tmp/restore'),
+  )
   if (created.status !== 'active') throw new Error('expected active')
   await host.dispose()
 
@@ -265,6 +316,8 @@ test('JSONL restore backfills cwd and agentDefinitionId from meta and loadSessio
       sessionId: 'sess-restore',
       status: 'disconnected',
       cwd: resolve('/tmp/restore'),
+      mcpServers: [],
+      additionalDirectories: [],
       agentDefinitionId: 'agent-restore',
     },
   ])
@@ -274,7 +327,11 @@ test('JSONL restore backfills cwd and agentDefinitionId from meta and loadSessio
     'agent-restore',
   )
   const reagent = await rebuilt.spawnAgent(redef)
-  await rebuilt.loadSession(reagent.agentId, 'sess-restore', {})
+  await rebuilt.loadSession(
+    reagent.agentId,
+    'sess-restore',
+    sessionParams('/tmp/restore'),
+  )
 
   expect(rebuilt.getSession('sess-restore')?.status).toBe('active')
 })
@@ -295,8 +352,11 @@ test('restoreSessions drops unserializable stored events with a diagnostic', asy
   const storage: StorageAdapter = {
     appendEvent() {},
     appendMeta() {},
-    listSessions: () => [{ sessionId: 'sess-poison' }],
+    listSessions: () => [
+      { sessionId: 'sess-poison', cwd: '', additionalDirectories: [] },
+    ],
     loadEvents: () => [poisoned, bad],
+    replaceSession() {},
   }
   const host = trackHost(createAcpHost({ storage }))
   const hostEvents = collectEvents(host, undefined)
@@ -304,7 +364,12 @@ test('restoreSessions drops unserializable stored events with a diagnostic', asy
   const restored = await host.restoreSessions()
 
   expect(restored).toEqual([
-    { sessionId: 'sess-poison', status: 'disconnected' },
+    {
+      sessionId: 'sess-poison',
+      status: 'disconnected',
+      cwd: '',
+      additionalDirectories: [],
+    },
   ])
   const replayed = collectEvents(host, 'sess-poison') as AcpSessionEvent[]
   expect(replayed.map((event) => event.type)).toEqual([
@@ -321,7 +386,7 @@ test('memory storage is the default and supports listSessions/loadEvents', async
     session: { sessionId: 'sess-mem' },
   })
   const agent = await host.spawnAgent(definition)
-  await host.createSession(agent.agentId, { cwd: '/tmp' })
+  await host.createSession(agent.agentId, sessionParams('/tmp'))
 
   const stored = await host.options.storage.loadEvents('sess-mem')
   expect(stored.length).toBeGreaterThan(0)
@@ -330,11 +395,14 @@ test('memory storage is the default and supports listSessions/loadEvents', async
       sessionId: 'sess-mem',
       agentDefinitionId: 'fixture',
       cwd: resolve('/tmp'),
+      mcpServers: [],
+      additionalDirectories: [],
+      lifecycle: 'open',
     },
   ])
 })
 
-test('restoreSessions announces each rebuilt session as session-created with disconnected status', async () => {
+test('restoreSessions publishes session-updated projections for rebuilt disconnected sessions', async () => {
   const stored: AcpEvent = {
     sessionId: 'sess-restored',
     seq: 1,
@@ -346,49 +414,66 @@ test('restoreSessions announces each rebuilt session as session-created with dis
     appendEvent() {},
     appendMeta() {},
     listSessions: () => [
-      { sessionId: 'sess-restored' },
-      { sessionId: 'sess-empty' },
+      { sessionId: 'sess-restored', cwd: '', additionalDirectories: [] },
+      { sessionId: 'sess-empty', cwd: '', additionalDirectories: [] },
     ],
     loadEvents: (sessionId) => (sessionId === 'sess-restored' ? [stored] : []),
+    replaceSession() {},
   }
   const host = trackHost(createAcpHost({ storage }))
   const hostEvents = collectEvents(host, undefined)
 
   await host.restoreSessions()
 
-  const announces = hostEvents.filter(
-    (event) => event.type === 'session-created',
+  const projections = hostEvents.filter(
+    (event) => event.type === 'session-updated',
   )
-  expect(announces.map((event) => event.payload)).toEqual([
-    { sessionId: 'sess-restored', status: 'disconnected' },
-    { sessionId: 'sess-empty', status: 'disconnected' },
+  expect(projections.map((event) => event.payload)).toEqual([
+    {
+      sessionId: 'sess-restored',
+      status: 'disconnected',
+      cwd: '',
+      additionalDirectories: [],
+    },
+    {
+      sessionId: 'sess-empty',
+      status: 'disconnected',
+      cwd: '',
+      additionalDirectories: [],
+    },
   ])
 })
 
-test('session announce events never enter the session log nor the storage adapter', async () => {
+test('session projection events never enter the session log nor the storage adapter', async () => {
   const host = trackHost(createAcpHost())
   const { definition } = await fixtureDefinition({
+    initialize: {
+      agentCapabilities: { sessionCapabilities: { close: {} } },
+    },
     session: { sessionId: 'sess-clean' },
   })
   const agent = await host.spawnAgent(definition)
-  await host.createSession(agent.agentId, { cwd: '/tmp' })
+  await host.createSession(agent.agentId, sessionParams('/tmp'))
   const sessionEvents = collectEvents(host, 'sess-clean')
   await host.closeSession('sess-clean')
 
-  const announceTypes = ['session-created', 'session-closed']
+  const projectionTypes = ['session-updated']
   expect(
-    sessionEvents.some((event) => announceTypes.includes(event.type)),
+    sessionEvents.some((event) => projectionTypes.includes(event.type)),
   ).toBe(false)
   expect(await host.options.storage.listSessions()).toEqual([
     {
       sessionId: 'sess-clean',
       agentDefinitionId: 'fixture',
       cwd: resolve('/tmp'),
+      mcpServers: [],
+      additionalDirectories: [],
+      lifecycle: 'closed',
     },
   ])
   const persisted = await host.options.storage.loadEvents('sess-clean')
   expect(persisted.length).toBeGreaterThan(0)
-  expect(persisted.some((event) => announceTypes.includes(event.type))).toBe(
+  expect(persisted.some((event) => projectionTypes.includes(event.type))).toBe(
     false,
   )
 })

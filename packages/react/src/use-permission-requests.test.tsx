@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { expect, test } from 'vitest'
 
 import { AcpProvider, usePermissionRequests } from './index.ts'
@@ -41,10 +41,18 @@ test('usePermissionRequests surfaces pending requests and converges after respon
   )
 
   expect(screen.getByTestId('list').textContent).toBe('')
+  await waitFor(() =>
+    expect(harness.client.status.getSnapshot().status).toBe('connected'),
+  )
+  await act(async () => {
+    await Promise.resolve()
+  })
 
   act(() => harness.pushPermission(PERMISSION))
 
-  expect(screen.getByTestId('list').textContent).toBe('perm-1')
+  await waitFor(() =>
+    expect(screen.getByTestId('list').textContent).toBe('perm-1'),
+  )
   expect(latest[0]).toMatchObject({
     requestId: 'perm-1',
     sessionId: 'sess-1',
@@ -62,7 +70,7 @@ test('usePermissionRequests surfaces pending requests and converges after respon
   expect(latest).toEqual([])
 })
 
-test('the request list reference is stable across re-renders without changes', () => {
+test('the request list reference is stable across re-renders without changes', async () => {
   const harness = createTestHarness()
   const seen: (readonly PermissionRequest[])[] = []
   function Probe(): null {
@@ -74,7 +82,14 @@ test('the request list reference is stable across re-renders without changes', (
       <Probe />
     </AcpProvider>,
   )
+  await waitFor(() =>
+    expect(harness.client.status.getSnapshot().status).toBe('connected'),
+  )
+  await act(async () => {
+    await Promise.resolve()
+  })
   act(() => harness.pushPermission(PERMISSION))
+  await waitFor(() => expect(seen.at(-1)?.length).toBe(1))
   const before = seen.at(-1)
 
   rerender(

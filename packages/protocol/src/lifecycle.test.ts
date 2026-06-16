@@ -17,7 +17,7 @@ test('createInitialSessionState produces an empty session state bound to the ses
     lastTurnUsage: null,
     lastStopReason: null,
     lastPromptError: null,
-    connection: { status: 'creating', resumed: false, authMethods: null },
+    connection: { status: 'creating', resumed: false },
     pendingPermissionRequests: [],
     terminals: {},
     resolvedPermissionRequests: [],
@@ -77,33 +77,6 @@ test('prompt termination without usage clears the previous turn usage and may ca
   })
 })
 
-test('an auth-required status change carries auth methods which clear on recovery', () => {
-  const authRequired = run([
-    {
-      sessionId: 'sess-1',
-      seq: 1,
-      ts: 0,
-      type: 'session-status-change',
-      payload: {
-        status: 'auth-required',
-        authMethods: [{ id: 'oauth', name: 'OAuth' }],
-      },
-    },
-  ])
-  expect(authRequired.connection).toEqual({
-    status: 'auth-required',
-    resumed: false,
-    authMethods: [{ id: 'oauth', name: 'OAuth' }],
-  })
-
-  const recovered = reduce(authRequired, statusEvent('active', 2))
-  expect(recovered.connection).toEqual({
-    status: 'active',
-    resumed: false,
-    authMethods: null,
-  })
-})
-
 test('a disconnected session and a session resumed back to active are distinguishable', () => {
   const disconnected = run([
     statusEvent('active', 1),
@@ -112,7 +85,6 @@ test('a disconnected session and a session resumed back to active are distinguis
   expect(disconnected.connection).toEqual({
     status: 'disconnected',
     resumed: false,
-    authMethods: null,
   })
 
   const resumed = run([
@@ -124,7 +96,6 @@ test('a disconnected session and a session resumed back to active are distinguis
   expect(resumed.connection).toEqual({
     status: 'active',
     resumed: true,
-    authMethods: null,
   })
 })
 
@@ -137,7 +108,6 @@ test('a resumed session loses its resumed mark when it disconnects again', () =>
   expect(state.connection).toEqual({
     status: 'disconnected',
     resumed: false,
-    authMethods: null,
   })
 })
 
@@ -149,7 +119,6 @@ test('a resumed session loses its resumed mark when it is closed', () => {
   expect(state.connection).toEqual({
     status: 'closed',
     resumed: false,
-    authMethods: null,
   })
 })
 
@@ -244,8 +213,9 @@ test('unrecognized updates, diagnostics and host events leave the state identica
       agentId: 'agent-1',
       seq: 2,
       ts: 0,
-      type: 'agent-status-change',
+      type: 'agent-updated',
       payload: {
+        agentId: 'agent-1',
         status: 'exited',
         restartCount: 0,
         reason: 'crashed',
@@ -262,19 +232,26 @@ test('unrecognized updates, diagnostics and host events leave the state identica
     {
       seq: 4,
       ts: 0,
-      type: 'session-created',
+      type: 'session-updated',
       payload: {
         sessionId: 'sess-2',
         agentId: 'agent-1',
         cwd: '/workspace',
+        additionalDirectories: [],
         status: 'active',
       },
     },
     {
       seq: 5,
       ts: 0,
-      type: 'session-closed',
-      payload: { sessionId: 'sess-2', status: 'closed' },
+      type: 'permission-updated',
+      payload: {
+        requestId: 'req-3',
+        sessionId: 'sess-2',
+        status: 'pending',
+        toolCall: { toolCallId: 'call-3' },
+        options: [{ kind: 'allow_once', name: 'Allow', optionId: 'allow' }],
+      },
     },
   ]
   for (const event of untouched) {

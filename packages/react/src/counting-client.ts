@@ -1,6 +1,7 @@
 import {
   createInitialSessionState,
   reduce,
+  type AgentSnapshotWire,
   type SessionState,
 } from '@acpjs/protocol'
 
@@ -8,7 +9,8 @@ import type {
   AcpAgent,
   AcpClient,
   AcpSession,
-  AgentSnapshot,
+  ChangeListener,
+  DiagnosticEvent,
   PermissionListener,
   PermissionRequest,
 } from '@acpjs/client'
@@ -19,6 +21,7 @@ export interface SubscriptionCounts {
   sessions: number
   sessionState: number
   permissions: number
+  diagnostics: number
   status: number
 }
 
@@ -36,9 +39,11 @@ export function createCountingClient(
   const sessionListeners = new Set<() => void>()
   const stateListeners = new Set<(state: SessionState) => void>()
   const permissionListeners = new Set<PermissionListener>()
+  const diagnosticListeners = new Set<ChangeListener>()
   let seq = 0
   let state = createInitialSessionState(sessionId)
   const emptyPermissions: readonly PermissionRequest[] = Object.freeze([])
+  const emptyDiagnostics: readonly DiagnosticEvent[] = Object.freeze([])
 
   const session: AcpSession = {
     sessionId,
@@ -59,7 +64,7 @@ export function createCountingClient(
   }
 
   const agentId = 'agent-1'
-  const agentSnapshot: AgentSnapshot = Object.freeze({
+  const agentSnapshot: AgentSnapshotWire = Object.freeze({
     agentId,
     status: 'ready',
     restartCount: 0,
@@ -87,12 +92,6 @@ export function createCountingClient(
       async delete() {
         throw new Error('delete is not supported by the counting client')
       },
-    },
-    async authenticate() {
-      throw new Error('authenticate is not supported by the counting client')
-    },
-    async logout() {
-      throw new Error('logout is not supported by the counting client')
     },
   }
 
@@ -144,6 +143,13 @@ export function createCountingClient(
         return () => permissionListeners.delete(listener)
       },
     },
+    diagnostics: {
+      getSnapshot: () => emptyDiagnostics,
+      subscribe(listener) {
+        diagnosticListeners.add(listener)
+        return () => diagnosticListeners.delete(listener)
+      },
+    },
     status: {
       getSnapshot: () => statusSnapshot,
       subscribe(listener) {
@@ -162,6 +168,7 @@ export function createCountingClient(
       sessions: sessionListeners.size,
       sessionState: stateListeners.size,
       permissions: permissionListeners.size,
+      diagnostics: diagnosticListeners.size,
       status: statusListeners.size,
     }),
     pushSessionEvent(text) {

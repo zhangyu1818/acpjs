@@ -10,6 +10,7 @@ test('the package export surface is sealed', () => {
     'useAgent',
     'useAgents',
     'useConnectionStatus',
+    'useDiagnostics',
     'usePermissionRequests',
     'useSession',
     'useSessions',
@@ -26,6 +27,7 @@ test('hooks expose an optional selector but no required selector or raw subscrip
   expect(api.useAgent.length).toBe(1)
   expect(api.useAgents.length).toBe(0)
   expect(api.useConnectionStatus.length).toBe(0)
+  expect(api.useDiagnostics.length).toBe(0)
   expect(api.useSession.length).toBe(1)
   expect(api.useSessions.length).toBe(0)
   expect(api.usePermissionRequests.length).toBe(0)

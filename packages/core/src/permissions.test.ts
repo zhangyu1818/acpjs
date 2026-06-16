@@ -1,10 +1,11 @@
 import { expect, test } from 'vitest'
 
-import { createAcpHost, type HostOptions } from './index.ts'
+import { createAcpHost } from './index.ts'
 import {
   collectEvents,
   fixtureDefinition,
   rejectionOf,
+  sessionParams,
   trackHost,
   waitFor,
 } from './test-harness.ts'
@@ -41,16 +42,13 @@ function permissionStep(
   }
 }
 
-async function sessionWithPermission(
-  options: HostOptions,
-  scenario?: FixtureScenario,
-) {
-  const host = trackHost(createAcpHost(options))
+async function sessionWithPermission(scenario?: FixtureScenario) {
+  const host = trackHost(createAcpHost())
   const { definition } = await fixtureDefinition(
     scenario ?? { turns: [{ steps: [permissionStep()] }] },
   )
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const events = collectEvents(host, created.sessionId) as AcpSessionEvent[]
   return { host, agentId: agent.agentId, sessionId: created.sessionId, events }
@@ -78,8 +76,8 @@ function resolvedPayload(
     : undefined
 }
 
-test('unmatched permission floats up, respondPermission answers the protocol once', async () => {
-  const { host, sessionId, events } = await sessionWithPermission({})
+test('every permission request floats up, respondPermission answers the protocol once', async () => {
+  const { host, sessionId, events } = await sessionWithPermission()
 
   const prompting = host.prompt(sessionId, [{ type: 'text', text: 'go' }])
   await waitFor(() => createdPayload(events) !== undefined)
@@ -107,7 +105,7 @@ test('unmatched permission floats up, respondPermission answers the protocol onc
 })
 
 test('second respond is rejected with acpjs/already-answered (INV-8)', async () => {
-  const { host, sessionId, events } = await sessionWithPermission({})
+  const { host, sessionId, events } = await sessionWithPermission()
 
   const prompting = host.prompt(sessionId, [{ type: 'text', text: 'go' }])
   await waitFor(() => createdPayload(events) !== undefined)
@@ -126,109 +124,8 @@ test('second respond is rejected with acpjs/already-answered (INV-8)', async () 
   await prompting
 })
 
-test('matching allow policy answers automatically but still emits audit events', async () => {
-  const { host, sessionId, events } = await sessionWithPermission({
-    permissionPolicy: [{ kind: 'execute', action: 'allow' }],
-  })
-
-  const result = await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
-
-  expect(result.stopReason).toBe('end_turn')
-  const created = createdPayload(events)
-  expect(created).toBeDefined()
-  expect(resolvedPayload(events)).toEqual({
-    requestId: created?.requestId,
-    status: 'answered',
-    outcome: { outcome: 'selected', optionId: 'opt-allow' },
-  })
-  const granted = events.find((event) => event.type === 'agent-message-chunk')
-  expect(granted?.payload).toEqual({
-    content: { type: 'text', text: 'granted' },
-  })
-})
-
-test('matching reject policy answers automatically with the reject option', async () => {
-  const { host, sessionId, events } = await sessionWithPermission({
-    permissionPolicy: [{ action: 'reject' }],
-  })
-
-  await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
-
-  expect(resolvedPayload(events)).toMatchObject({
-    status: 'answered',
-    outcome: { outcome: 'selected', optionId: 'opt-reject' },
-  })
-  expect(
-    events.find((event) => event.type === 'agent-message-chunk'),
-  ).toBeUndefined()
-})
-
-test('auto policy falls back to the *_always option when no *_once option exists', async () => {
-  const { host, sessionId, events } = await sessionWithPermission(
-    { permissionPolicy: [{ action: 'allow' }] },
-    {
-      turns: [
-        {
-          steps: [
-            permissionStep({
-              options: [
-                {
-                  kind: 'allow_always',
-                  name: 'Always allow',
-                  optionId: 'opt-always',
-                },
-                { kind: 'reject_once', name: 'Reject', optionId: 'opt-reject' },
-              ],
-              onSelected: {
-                'opt-always': [
-                  {
-                    kind: 'update',
-                    update: {
-                      sessionUpdate: 'agent_message_chunk',
-                      content: { type: 'text', text: 'granted' },
-                    },
-                  },
-                ],
-              },
-            }),
-          ],
-        },
-      ],
-    },
-  )
-
-  const result = await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
-
-  expect(result.stopReason).toBe('end_turn')
-  expect(resolvedPayload(events)).toMatchObject({
-    status: 'answered',
-    outcome: { outcome: 'selected', optionId: 'opt-always' },
-  })
-})
-
-test('kind-specific rules do not match permission requests without kind', async () => {
-  const { host, sessionId, events } = await sessionWithPermission(
-    { permissionPolicy: [{ kind: 'execute', action: 'allow' }] },
-    {
-      turns: [
-        {
-          steps: [permissionStep({ toolCall: { toolCallId: 'call_1' } })],
-        },
-      ],
-    },
-  )
-
-  const prompting = host.prompt(sessionId, [{ type: 'text', text: 'go' }])
-  await waitFor(() => createdPayload(events) !== undefined)
-  const requestId = createdPayload(events)?.requestId ?? ''
-  expect(resolvedPayload(events)).toBeUndefined()
-
-  host.respondPermission(requestId, { outcome: 'cancelled' })
-  await prompting
-})
-
 test('cancel supersedes pending permission requests', async () => {
-  const { host, sessionId, events } = await sessionWithPermission({})
+  const { host, sessionId, events } = await sessionWithPermission()
 
   const prompting = host.prompt(sessionId, [{ type: 'text', text: 'go' }])
   await waitFor(() => createdPayload(events) !== undefined)
@@ -254,7 +151,7 @@ test('agent crash supersedes pending permissions and rejects the in-flight promp
     turns: [{ steps: [permissionStep()] }],
   })
   const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, { cwd: '/tmp' })
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const sessionId = created.sessionId
   const events = collectEvents(host, sessionId) as AcpSessionEvent[]

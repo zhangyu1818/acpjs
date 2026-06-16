@@ -24,7 +24,7 @@ export interface AgentRuntimeDeps {
   options: ResolvedHostOptions
   bus: EventBus
   clientCapabilities: ClientCapabilities
-  createClient: () => Client
+  createClient: (handle: AgentHandle) => Client
   onAgentDown: (handle: AgentHandle) => void
   onAgentReady: (handle: AgentHandle) => void
   isHostDisposed: () => boolean
@@ -48,7 +48,6 @@ export class AgentRuntime {
       restartCount: 0,
       exit: undefined,
       capabilities: undefined,
-      authMethods: undefined,
       proc: undefined,
       conn: undefined,
       pendingRejects: new Set(),
@@ -138,7 +137,10 @@ export class AgentRuntime {
       Writable.toWeb(stdin),
       Readable.toWeb(stdout) as ReadableStream<Uint8Array>,
     )
-    const conn = new ClientSideConnection(this.#deps.createClient, stream)
+    const conn = new ClientSideConnection(
+      () => this.#deps.createClient(handle),
+      stream,
+    )
     handle.conn = conn
     try {
       const init = await this.track(
@@ -156,7 +158,6 @@ export class AgentRuntime {
         )
       }
       handle.capabilities = init.agentCapabilities
-      handle.authMethods = init.authMethods
       bus.diagnostic('info', 'agent/initialized', {
         message: 'initialize handshake complete',
         agentId: handle.agentId,
@@ -293,7 +294,12 @@ export class AgentRuntime {
         agentId: handle.agentId,
       })
       proc.kill('SIGKILL')
-      await exited
+      await Promise.race([
+        exited,
+        new Promise<void>((resolvePromise) =>
+          setTimeout(resolvePromise, this.#deps.options.killTimeoutMs),
+        ),
+      ])
     }
   }
 }

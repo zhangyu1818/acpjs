@@ -1,4 +1,8 @@
-import { createAcpClient, type AcpClient } from '@acpjs/client'
+import {
+  createAcpClient,
+  type AcpClient,
+  type CreateOrLoadSessionParams,
+} from '@acpjs/client'
 
 import type {
   AcpHostEvent,
@@ -34,6 +38,14 @@ export interface TestHarness {
     toolCall: Record<string, unknown>
     options: Record<string, unknown>[]
   }) => void
+}
+
+export function sessionParams(cwd = '/tmp'): CreateOrLoadSessionParams {
+  return {
+    cwd,
+    mcpServers: [],
+    additionalDirectories: [],
+  }
 }
 
 export function createTestHarness(): TestHarness {
@@ -150,6 +162,14 @@ export function createTestHarness(): TestHarness {
         payload,
       }
       transportHandlers?.onInboundRequest(request)
+      const hostEvent = {
+        type: 'permission-updated',
+        payload: { ...payload, status: 'pending' },
+        seq: hostLog.length + 1,
+        ts: 0,
+      } as AcpHostEvent
+      hostLog.push(hostEvent)
+      for (const deliver of hostSubscribers) deliver(hostEvent)
     },
   }
 }

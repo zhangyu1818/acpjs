@@ -1,16 +1,30 @@
 import type { ReactElement } from 'react'
 
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { expect, test } from 'vitest'
 
 import { AcpProvider, useSessions } from './index.ts'
-import { createTestHarness } from './test-support.ts'
+import { createTestHarness, sessionParams } from './test-support.ts'
 
 function SessionList(): ReactElement {
   const sessions = useSessions()
   return (
     <div data-testid="sessions">
       {sessions.map((session) => session.sessionId).join(',')}
+    </div>
+  )
+}
+
+function SessionStatuses(): ReactElement {
+  const sessions = useSessions()
+  return (
+    <div data-testid="sessions">
+      {sessions
+        .map(
+          (session) =>
+            `${session.sessionId}:${session.getSnapshot().connection.status}`,
+        )
+        .join(',')}
     </div>
   )
 }
@@ -34,7 +48,7 @@ test('useSessions starts empty and reactively lists created and attached session
       id: 'a',
       command: 'node',
     })
-    await agent.sessions.create({ cwd: '/tmp' })
+    await agent.sessions.create(sessionParams())
   })
 
   expect(screen.getByTestId('sessions').textContent).toBe('sess-1')
@@ -63,7 +77,7 @@ test('useSessions returns the same array reference across re-renders without cha
       id: 'a',
       command: 'node',
     })
-    await agent.sessions.create({ cwd: '/tmp' })
+    await agent.sessions.create(sessionParams())
   })
   const before = seen.at(-1)
 
@@ -74,4 +88,38 @@ test('useSessions returns the same array reference across re-renders without cha
   )
 
   expect(seen.at(-1)).toBe(before)
+})
+
+test('useSessions reacts to host session projections without an explicit attach call', async () => {
+  const harness = createTestHarness()
+  render(
+    <AcpProvider client={harness.client}>
+      <SessionStatuses />
+    </AcpProvider>,
+  )
+  await waitFor(() =>
+    expect(harness.client.status.getSnapshot().status).toBe('connected'),
+  )
+  await act(async () => {
+    await Promise.resolve()
+  })
+
+  await act(async () => {
+    harness.emitHost({
+      type: 'session-updated',
+      payload: {
+        sessionId: 'sess-projected',
+        status: 'active',
+        agentId: 'agent-1',
+        cwd: '/tmp',
+        additionalDirectories: [],
+      },
+    })
+  })
+
+  await waitFor(() =>
+    expect(screen.getByTestId('sessions').textContent).toBe(
+      'sess-projected:active',
+    ),
+  )
 })

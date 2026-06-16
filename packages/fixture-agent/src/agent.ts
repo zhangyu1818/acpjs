@@ -208,6 +208,9 @@ export function createFixtureAgent(
           load.error.data,
         )
       }
+      for (const step of load?.steps ?? []) {
+        await performStep(step, params.sessionId, new AbortController().signal)
+      }
       for (const update of load?.replay ?? []) {
         await conn.sessionUpdate({ sessionId: params.sessionId, update })
       }
@@ -219,6 +222,7 @@ export function createFixtureAgent(
   }
 
   const sessionCapabilities = capabilities?.sessionCapabilities
+  let resumeCalls = 0
 
   if (sessionCapabilities?.list) {
     agent.listSessions = async () => {
@@ -233,6 +237,20 @@ export function createFixtureAgent(
   if (sessionCapabilities?.resume) {
     agent.resumeSession = async (params) => {
       const resume = scenario.resumeSession
+      resumeCalls += 1
+      if (
+        resume?.error &&
+        (resume.failures === undefined || resumeCalls <= resume.failures)
+      ) {
+        throw new RequestError(
+          resume.error.code,
+          resume.error.message,
+          resume.error.data,
+        )
+      }
+      for (const step of resume?.steps ?? []) {
+        await performStep(step, params.sessionId, new AbortController().signal)
+      }
       if (resume?.expectMcpServers) {
         const expected = resume.expectMcpServers.map((server) => server.name)
         const received = (params.mcpServers ?? []).map((server) => server.name)

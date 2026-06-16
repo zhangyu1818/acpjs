@@ -5,6 +5,7 @@ import {
   type RpcResponse,
   type Transport,
   type TransportHandlers,
+  type TransportSubscribeParams,
 } from '@acpjs/protocol'
 
 import {
@@ -105,7 +106,10 @@ export function electronTransport(
     string,
     { resolve: () => void; reject: (error: Error) => void }
   >()
-  const subscribers = new Map<string, (event: AcpEvent) => void>()
+  const subscribers = new Map<
+    string,
+    { params: TransportSubscribeParams; onEvent: (event: AcpEvent) => void }
+  >()
   let subCounter = 0
   let ackCounter = 0
 
@@ -147,11 +151,15 @@ export function electronTransport(
         break
       }
       case 'event': {
-        subscribers.get(message.subId)?.(message.event)
+        subscribers.get(message.subId)?.onEvent(message.event)
         break
       }
       case 'sub-error': {
+        const subscriber = subscribers.get(message.subId)
         subscribers.delete(message.subId)
+        if (subscriber) {
+          handlers?.onSubscriptionError?.(subscriber.params, message.error)
+        }
         break
       }
       case 'inbound-request': {
@@ -230,7 +238,7 @@ export function electronTransport(
       }
       subCounter += 1
       const subId = `sub-${subCounter}`
-      subscribers.set(subId, onEvent)
+      subscribers.set(subId, { params, onEvent })
       send({ t: 'subscribe', subId, params })
       return () => {
         if (!subscribers.delete(subId)) return

@@ -1,5 +1,4 @@
 import type {
-  AuthMethod,
   AvailableCommandsUpdate,
   ConfigOptionUpdate,
   ContentChunk,
@@ -17,25 +16,12 @@ import type {
   UsageUpdate,
 } from '@agentclientprotocol/sdk'
 
+import type { SessionStatus } from './domain'
+import type { AgentSnapshotWire, SessionSnapshotWire } from './snapshots'
+
 export type AcpEventExtensions = Record<string, unknown>
 
 type Normalized<T> = Omit<T, '_meta'>
-
-export type SessionStatus =
-  | 'creating'
-  | 'auth-required'
-  | 'active'
-  | 'prompting'
-  | 'disconnected'
-  | 'resuming'
-  | 'closed'
-
-export type AgentStatus =
-  | 'spawning'
-  | 'initializing'
-  | 'ready'
-  | 'exited'
-  | 'restarting'
 
 interface SessionEventBase {
   sessionId: string
@@ -65,26 +51,10 @@ export interface PromptFinishedPayload {
 export interface SessionStatusChangePayload {
   status: SessionStatus
   resumed?: boolean
-  authMethods?: AuthMethod[]
 }
 
-export type AgentExitReason =
-  | 'spawn-failed'
-  | 'initialize-failed'
-  | 'crashed'
-  | 'disposed'
-  | 'restart-exhausted'
-
-export interface AgentStatusChangePayload {
-  status: AgentStatus
-  restartCount: number
-  reason?: AgentExitReason
-  exit?: { code?: number; signal?: string }
-}
-
-export interface AuthRequiredPayload {
-  agentId: string
-  authMethods: AuthMethod[]
+export interface SessionResetPayload {
+  reason: 'load'
 }
 
 export interface PermissionRequestCreatedPayload {
@@ -96,6 +66,16 @@ export interface PermissionRequestCreatedPayload {
 export interface PermissionRequestResolvedPayload {
   requestId: string
   status: 'answered' | 'superseded'
+  outcome?: RequestPermissionOutcome
+}
+
+export interface HostPermissionSnapshot {
+  requestId: string
+  sessionId: string
+  agentId?: string
+  status: 'pending' | 'answered' | 'superseded'
+  toolCall: ToolCallUpdate
+  options: PermissionOption[]
   outcome?: RequestPermissionOutcome
 }
 
@@ -122,13 +102,6 @@ export interface InstallProgressPayload {
   downloadedBytes?: number
   totalBytes?: number
   reason?: string
-}
-
-export interface SessionAnnouncePayload {
-  sessionId: string
-  agentId?: string
-  cwd?: string
-  status: SessionStatus
 }
 
 export type DiagnosticLevel = 'info' | 'warn' | 'error'
@@ -216,6 +189,11 @@ export interface SessionStatusChangeEvent extends SessionEventBase {
   payload: SessionStatusChangePayload
 }
 
+export interface SessionResetEvent extends SessionEventBase {
+  type: 'session-reset'
+  payload: SessionResetPayload
+}
+
 export interface PermissionRequestCreatedEvent extends SessionEventBase {
   type: 'permission-request-created'
   payload: PermissionRequestCreatedPayload
@@ -236,19 +214,14 @@ export interface UnrecognizedUpdateEvent extends SessionEventBase {
   payload: UnrecognizedUpdatePayload
 }
 
-export interface AgentStatusChangeEvent extends HostEventBase {
-  type: 'agent-status-change'
-  payload: AgentStatusChangePayload
+export interface AgentUpdatedEvent extends HostEventBase {
+  type: 'agent-updated'
+  payload: AgentSnapshotWire
 }
 
 export interface InstallProgressEvent extends HostEventBase {
   type: 'install-progress'
   payload: InstallProgressPayload
-}
-
-export interface AuthRequiredEvent extends HostEventBase {
-  type: 'auth-required'
-  payload: AuthRequiredPayload
 }
 
 export interface DiagnosticEvent {
@@ -260,19 +233,19 @@ export interface DiagnosticEvent {
   extensions?: AcpEventExtensions
 }
 
-export interface SessionCreatedEvent {
+export interface SessionUpdatedEvent {
   seq: number
   ts: number
-  type: 'session-created'
-  payload: SessionAnnouncePayload
+  type: 'session-updated'
+  payload: SessionSnapshotWire
   extensions?: AcpEventExtensions
 }
 
-export interface SessionClosedEvent {
+export interface PermissionUpdatedEvent {
   seq: number
   ts: number
-  type: 'session-closed'
-  payload: SessionAnnouncePayload
+  type: 'permission-updated'
+  payload: HostPermissionSnapshot
   extensions?: AcpEventExtensions
 }
 
@@ -291,17 +264,19 @@ export type AcpSessionEvent =
   | UsageUpdateEvent
   | PromptFinishedEvent
   | SessionStatusChangeEvent
+  | SessionResetEvent
   | PermissionRequestCreatedEvent
   | PermissionRequestResolvedEvent
   | TerminalOutputEvent
   | UnrecognizedUpdateEvent
 
-export type AcpHostEvent =
-  | AgentStatusChangeEvent
-  | InstallProgressEvent
-  | AuthRequiredEvent
-  | DiagnosticEvent
-  | SessionCreatedEvent
-  | SessionClosedEvent
+export type AcpHostProjectionEvent =
+  | AgentUpdatedEvent
+  | SessionUpdatedEvent
+  | PermissionUpdatedEvent
+
+export type AcpHostTelemetryEvent = InstallProgressEvent | DiagnosticEvent
+
+export type AcpHostEvent = AcpHostProjectionEvent | AcpHostTelemetryEvent
 
 export type AcpEvent = AcpSessionEvent | AcpHostEvent

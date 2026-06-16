@@ -9,6 +9,7 @@ import {
   useAgent,
   useAgents,
   useConnectionStatus,
+  useDiagnostics,
   usePermissionRequests,
   useSession,
   useSessions,
@@ -21,6 +22,7 @@ function AllHooks(): ReactElement {
   useConnectionStatus()
   const session = useSession('sess-1')
   usePermissionRequests()
+  useDiagnostics()
   const text = session?.state.messages
     .map((message) =>
       message.content
@@ -45,6 +47,7 @@ test('unmounting removes every store subscription the hooks created', () => {
     sessions: 2,
     sessionState: 1,
     permissions: 1,
+    diagnostics: 1,
     status: 1,
   })
 
@@ -56,6 +59,7 @@ test('unmounting removes every store subscription the hooks created', () => {
     sessions: 0,
     sessionState: 0,
     permissions: 0,
+    diagnostics: 0,
     status: 0,
   })
 })
@@ -76,6 +80,7 @@ test('StrictMode double-invocation leaves exactly one subscription per store and
     sessions: 2,
     sessionState: 1,
     permissions: 1,
+    diagnostics: 1,
     status: 1,
   })
 
@@ -91,6 +96,7 @@ test('StrictMode double-invocation leaves exactly one subscription per store and
     sessions: 0,
     sessionState: 0,
     permissions: 0,
+    diagnostics: 0,
     status: 0,
   })
 })

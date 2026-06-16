@@ -72,7 +72,11 @@ test('end to end: fixture agent events arrive in the rendered hook output', asyn
         command: process.execPath,
         args: [fixtureAgentCliPath, '--scenario', scenarioPath],
       })
-      session = await agent.sessions.create({ cwd: '/tmp' })
+      session = await agent.sessions.create({
+        cwd: '/tmp',
+        mcpServers: [],
+        additionalDirectories: [],
+      })
     })
 
     render(

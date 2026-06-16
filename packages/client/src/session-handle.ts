@@ -1,5 +1,5 @@
 import {
-  ACP_RPC_METHODS,
+  ACPJS_HOST_RPC_METHODS,
   type ContentBlock,
   type PromptFinishedPayload,
   type SessionConfigOption,
@@ -19,25 +19,25 @@ export function createSessionHandle(
     getSnapshot: () => store.getSnapshot(),
     subscribe: (listener: StateListener) => store.subscribe(listener),
     async prompt(blocks: ContentBlock[]): Promise<PromptFinishedPayload> {
-      return (await call(ACP_RPC_METHODS.prompt, {
+      return (await call(ACPJS_HOST_RPC_METHODS.prompt, {
         sessionId,
         prompt: blocks,
       })) as PromptFinishedPayload
     },
     async cancel(): Promise<void> {
-      await call(ACP_RPC_METHODS.cancel, { sessionId })
+      await call(ACPJS_HOST_RPC_METHODS.cancel, { sessionId })
     },
     async close(): Promise<void> {
-      await call(ACP_RPC_METHODS.closeSession, { sessionId })
+      await call(ACPJS_HOST_RPC_METHODS.closeSession, { sessionId })
     },
     async setMode(modeId: string): Promise<void> {
-      await call(ACP_RPC_METHODS.setMode, { sessionId, modeId })
+      await call(ACPJS_HOST_RPC_METHODS.setMode, { sessionId, modeId })
     },
     async setConfigOption(
       configId: string,
       value: SessionConfigValue,
     ): Promise<SessionConfigOption[]> {
-      return (await call(ACP_RPC_METHODS.setConfigOption, {
+      return (await call(ACPJS_HOST_RPC_METHODS.setConfigOption, {
         sessionId,
         configId,
         value,

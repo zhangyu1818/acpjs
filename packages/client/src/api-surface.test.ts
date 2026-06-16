@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 
 import * as api from './index.ts'
 import { createAcpClient } from './index.ts'
-import { createFakeHub } from './test-support.ts'
+import { createFakeHub, sessionParams } from './test-support.ts'
 
 test('the package export surface is sealed', () => {
   expect(Object.keys(api).sort()).toEqual([
@@ -21,10 +21,11 @@ test('facade objects expose no raw RPC, raw notification or selector escape hatc
   }))
   const client = createAcpClient({ transport: hub.connection().transport })
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   expect(Object.keys(client).sort()).toEqual([
     'agents',
+    'diagnostics',
     'dispose',
     'permissions',
     'sessions',
@@ -50,15 +51,17 @@ test('facade objects expose no raw RPC, raw notification or selector escape hatc
     'getSnapshot',
     'subscribe',
   ])
+  expect(Object.keys(client.diagnostics).sort()).toEqual([
+    'getSnapshot',
+    'subscribe',
+  ])
   expect(Object.keys(client.status).sort()).toEqual([
     'getSnapshot',
     'subscribe',
   ])
   expect(Object.keys(agent).sort()).toEqual([
     'agentId',
-    'authenticate',
     'getSnapshot',
-    'logout',
     'sessions',
     'subscribe',
   ])

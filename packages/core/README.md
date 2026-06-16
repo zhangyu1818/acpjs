@@ -25,7 +25,6 @@ import { createAcpHost } from '@acpjs/core'
 
 const host = createAcpHost({
   restart: 'on-crash',
-  permissionPolicy: [{ kind: 'read', action: 'allow' }],
 })
 
 const agent = await host.spawnAgent({
@@ -34,57 +33,50 @@ const agent = await host.spawnAgent({
   args: ['some-acp-agent'],
 })
 
-const created = await host.createSession(agent.agentId, { cwd: process.cwd() })
+const created = await host.createSession(agent.agentId, {
+  cwd: process.cwd(),
+  mcpServers: [],
+  additionalDirectories: [],
+})
 
-if (created.status === 'auth-required') {
-  await host.authenticate(agent.agentId, created.authMethods[0]?.id ?? '')
-  // re-run createSession after authenticating
-}
+const { sessionId } = created
 
-if (created.status === 'active') {
-  const { sessionId } = created
+// Subscribe from seq 0 to receive the full backlog plus live events.
+const unsubscribe = host.subscribe(sessionId, 0, (event) => {
+  console.log(event.seq, event.type)
+})
 
-  // Subscribe from seq 0 to receive the full backlog plus live events.
-  const unsubscribe = host.subscribe(sessionId, 0, (event) => {
-    console.log(event.seq, event.type)
-  })
+const result = await host.prompt(sessionId, [{ type: 'text', text: 'hello' }])
+// result.stopReason is e.g. 'end_turn'
 
-  const result = await host.prompt(sessionId, [{ type: 'text', text: 'hello' }])
-  // result.stopReason is e.g. 'end_turn'
-
-  unsubscribe()
-  await host.closeSession(sessionId)
-}
+unsubscribe()
+await host.closeSession(sessionId)
 
 await host.dispose()
 ```
 
-`createSession` resolves to a discriminated result rather than throwing on
-missing auth:
-
-- `{ status: 'active', sessionId }`
-- `{ status: 'auth-required', authMethods }` — no session is registered and no
-  `sessionId` is fabricated. A host-level `auth-required` event is also
-  broadcast (see below).
+`createSession` resolves to the created `SessionSnapshotWire`. Agent-side
+JSON-RPC errors, including authentication-related errors, are propagated to the
+caller; acpjs does not model login state.
 
 ## Public API
 
 `createAcpHost(options?)` returns an `AcpHost`. The `AcpHost` class is also
 exported directly.
 
-- Agents: `spawnAgent(definition)`, `authenticate(agentId, methodId)`,
-  `logout(agentId)`, `getAgent(agentId)`, `getAgents()`
-- Sessions: `createSession(agentId, { cwd, mcpServers? })`,
+- Agents: `spawnAgent(definition)`, `getAgent(agentId)`, `getAgents()`
+- Sessions: `createSession(agentId, { cwd, mcpServers, additionalDirectories })`,
   `prompt(sessionId, ContentBlock[])`, `cancel(sessionId)`,
   `closeSession(sessionId)`, `listSessions(agentId, { cursor?, cwd? })`,
-  `resumeSession(sessionId)`, `deleteSession(sessionId)`,
-  `loadSession(agentId, sessionId, { cwd?, mcpServers? })`,
+  `resumeSession(agentId, sessionId, { cwd, mcpServers?, additionalDirectories })`,
+  `deleteSession(agentId, sessionId)`,
+  `loadSession(agentId, sessionId, { cwd, mcpServers, additionalDirectories })`,
   `setMode(sessionId, modeId)`,
   `setConfigOption(sessionId, configId, value)`, `getSession(sessionId)`,
   `getSessions()`
-- Events: `subscribe(sessionId | undefined, fromSeq, callback)`. Pass `undefined`
-  to subscribe to the host stream (agent status changes, `auth-required`,
-  diagnostics).
+- Events: `subscribe(sessionId | undefined, fromSeq, callback)`. Pass
+  `undefined` to subscribe to the host stream (agent/session/permission
+  projections and diagnostics).
 - Permissions: `respondPermission(requestId, outcome)` where `outcome` is the
   protocol `RequestPermissionOutcome`.
 - Persistence: `restoreSessions()` rebuilds `disconnected` sessions from storage
@@ -99,9 +91,11 @@ is frozen.
 Storage adapters: `createMemoryStorage()` (the default) and
 `createJsonlStorage(file)`.
 
-Default handlers: `createDefaultFsHandler()`, `createDefaultTerminalHandler()`.
-Capability derivation: `deriveClientCapabilities(fs, terminal)` (INV-6) reports
-to the agent only the methods a handler actually implements.
+Default fs handler: `createDefaultFsHandler()`. Terminal support is opt-in:
+inject a complete handler, such as `createDefaultTerminalHandler()`, through
+`HostOptions.terminal`. Capability derivation:
+`deriveClientCapabilities(fs, terminal)` (INV-6) reports to the agent only the
+methods a handler actually implements.
 
 Normalization: `normalizeSessionUpdate(update)` maps the 13 `SessionUpdate`
 variants to event `type` / `payload` / `extensions`; unmodeled variants
@@ -110,12 +104,12 @@ degrade to `unrecognized-update` (INV-4).
 Errors: `AcpError` carries a `code` drawn from the closed `ACP_ERROR_CODES`
 namespace in `@acpjs/protocol` (`acpjs/config-invalid`,
 `acpjs/prompt-in-flight`, `acpjs/already-answered`, `acpjs/session-closed`,
-`acpjs/agent-exited`, `acpjs/capability-unsupported`, `acpjs/auth-required`,
+`acpjs/agent-exited`, `acpjs/capability-unsupported`,
 `acpjs/agent-error`, `acpjs/transport-closed`).
 
 Envelope adapter: `createHostEndpoint(host)` returns an `EnvelopeEndpoint`
-(Transport contract shape). RPC method names come from `ACP_RPC_METHODS` in
-`@acpjs/protocol` (`agents/spawn|authenticate|logout|list`,
+(Transport contract shape). RPC method names come from `ACPJS_HOST_RPC_METHODS` in
+`@acpjs/protocol` (`agents/spawn|list`,
 `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`)
 and map to the same-named host methods. Missing required parameters are
 rejected at the envelope boundary with `acpjs/config-invalid`. Event
@@ -130,36 +124,35 @@ the Transport contract directly.
 
 ## HostOptions
 
-| Field              | Default                                        | Notes                                                                                                   |
-| ------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `restart`          | `'never'`                                      | With `'on-crash'`, only a `crashed` exit triggers a restart.                                            |
-| `restartLimit`     | `3`                                            | Max consecutive restarts; any `ready` resets the counter.                                               |
-| `restartBackoff`   | `{ initialMs: 1000, factor: 2, maxMs: 30000 }` | Exponential backoff.                                                                                    |
-| `permissionPolicy` | `[]` (everything is escalated)                 | Rules `{ kind?, action: 'allow' \| 'reject' \| 'ask' }`, matched in order.                              |
-| `storage`          | in-memory                                      | `StorageAdapter`.                                                                                       |
-| `fs` / `terminal`  | built-in Node implementations                  | Replaced wholesale when injected; the injected surface drives the initialize capability report (INV-6). |
-| `killTimeoutMs`    | `5000`                                         | dispose graceful-shutdown timeout; SIGKILL after it elapses.                                            |
+| Field            | Default                                        | Notes                                                                                                   |
+| ---------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `restart`        | `'never'`                                      | With `'on-crash'`, only a `crashed` exit triggers a restart.                                            |
+| `restartLimit`   | `3`                                            | Max consecutive restarts; any `ready` resets the counter.                                               |
+| `restartBackoff` | `{ initialMs: 1000, factor: 2, maxMs: 30000 }` | Exponential backoff.                                                                                    |
+| `storage`        | in-memory                                      | `StorageAdapter`.                                                                                       |
+| `fs`             | built-in Node implementation                   | Replaced wholesale when injected; the injected surface drives the initialize capability report (INV-6). |
+| `terminal`       | disabled                                       | No terminal capability unless a complete handler with `cleanupSession` is injected.                     |
+| `killTimeoutMs`  | `5000`                                         | dispose graceful-shutdown timeout; SIGKILL after it elapses.                                            |
 
 `HostOptions` is immutable (frozen) once constructed; rebuild the host to change
 it.
 
 ## Snapshots
 
-`getAgent` / `getAgents` return `AgentSnapshot`:
-`{ agentId, status, restartCount, reason?, exit?, capabilities?, authMethods? }`.
+`getAgent` / `getAgents` return `AgentSnapshotWire`:
+`{ agentId, status, restartCount, reason?, exit?, capabilities? }`.
 
-`getSession` / `getSessions` return `SessionSnapshot`:
-`{ sessionId, status, agentId?, cwd?, agentDefinitionId? }`.
+`getSession` / `getSessions` return `SessionSnapshotWire`:
+`{ sessionId, status, agentId?, cwd, mcpServers?, additionalDirectories, agentDefinitionId?, title?, updatedAt? }`.
 
 ## Host stream and diagnostics
 
 The host stream (subscribed with `subscribe(undefined, fromSeq, cb)`) carries:
 
-- `agent-status-change` — payload `{ status, restartCount, reason?, exit? }`
-  (`reason` / `exit` only on `exited`).
-- `auth-required` — payload `{ agentId, authMethods }`, emitted when
-  `createSession` hits a `-32000` auth error.
-- `session-created` / `session-closed` lifecycle announcements.
+- `agent-updated` — full `AgentSnapshotWire` projection.
+- `session-updated` — full `SessionSnapshotWire` projection.
+- `permission-updated` — host-level permission pending/answered/superseded
+  projection.
 - `diagnostic` events with the following `code` values: `agent/spawn`,
   `agent/spawn-failed`, `agent/initialized`, `agent/initialize-failed`,
   `agent/exit` (with code/signal), `agent/process-error`, `agent/stderr`,
@@ -180,13 +173,9 @@ reduction. The `agent/spawn` diagnostic records only env key names, never values
   cwds are absolutized with `path.resolve` before reaching the protocol.
 - **kill timeout**: defaults to 5s (`killTimeoutMs` is injectable); dispose ends
   stdin first (graceful), then sends `SIGKILL` on timeout.
-- **auth-required API shape**: `createSession` does not express missing auth as
-  an error; it resolves to `{ status: 'auth-required', authMethods }`
-  (authMethods come from the cached initialize response) and broadcasts a
-  host-level `auth-required` event. No session is registered and no `sessionId`
-  is fabricated. A `-32000` during `prompt` moves the session to the
-  `auth-required` state and emits a `session-status-change` event carrying
-  authMethods. Detection criterion: JSON-RPC `error.code === -32000`.
+- **auth errors**: acpjs does not expose login APIs or auth state. Agent-side
+  authentication failures are propagated as agent JSON-RPC errors; callers
+  configure/login the agent outside acpjs and retry.
 - **prompt protocol-error event shape**: the `prompt-finished` event (and the
   `prompt` return value) uses `stopReason: 'end_turn'` as a placeholder and
   carries `error: { code, message, data? }`. `prompt` does not reject, except on
@@ -198,35 +187,31 @@ reduction. The `agent/spawn` diagnostic records only env key names, never values
   A top-level `_meta` lands in `extensions._meta`; other unknown top-level
   fields land in `extensions.<key>`. The `unrecognized-update` payload preserves
   the whole update verbatim (including the `sessionUpdate` discriminator).
-- **resume dedup mechanism**: during `session/load` (auto recovery and explicit
-  `loadSession`) a per-session suppression flag is set, so every `session/update`
-  the agent replays produces no new event; modes / configOptions from the load
-  response synthesize an incremental `session-config-init` event only when
-  non-empty (the reducer's full-replace semantics guarantee G2).
+- **load/resume lifecycle**: unknown load/resume uses a staging session that is
+  invisible to `getSessions()` and host/client projections until the agent RPC
+  succeeds. Existing load/resume publishes a `resuming` projection but does not
+  clear log/config or write success metadata before the RPC commits. `load`
+  buffers replayed `session/update` notifications, then emits `session-reset`,
+  replay, config, and active status on success. `resume` rejects replayed
+  history and only updates config/status.
 - **pre-ready failure inside a restart cycle**: during a restart cycle
   (`restartCount > 0`) spawn/initialize failures keep consuming restart budget
   and retry, making `restart-exhausted` reachable; the first (non-cyclic)
   spawn/initialize failure is not retried.
-- **capability gating**: `session/list|resume|close|delete` check
-  `sessionCapabilities.<x> != null`; `logout` checks `auth.logout != null`;
-  `loadSession` checks the top-level boolean; `set_mode` / `set_config_option`
-  check whether the session has ever seen modes / configOptions (in a
-  new/load/resume response).
-- **permission auto-policy option matching**: `allow` prefers `allow_once` then
-  `allow_always`; `reject` likewise. When a rule matches but the request options
-  lack the corresponding kind, it falls back to escalation. A rule with no
-  `kind` matches anything; a request whose `toolCall.kind` is absent is matched
-  only by rules without a `kind`.
-- **storage semantics**: `appendEvent` is called synchronously and both sync
-  exceptions and async rejections are captured (each becomes a
-  `storage/write-failed` diagnostic, which is itself not written to storage, to
-  prevent recursion). The memory implementation keeps session events only; the
-  JSONL implementation appends to a single file (writes are serialized in a
-  queue; one failed write does not block the rest) and scans the whole file for
-  `listSessions` / `loadEvents`. `restoreSessions` skips (and diagnoses) stored
-  events that are not structured-clone safe; restored sessions are marked
-  `disconnected` (no duplicate emit when the trailing event is already
-  disconnected).
+- **capability gating**: `session/list|resume` check
+  `sessionCapabilities.<x> != null`; `loadSession` checks the top-level
+  boolean; `set_mode` / `set_config_option` check whether the session has ever
+  seen modes / configOptions (in a new/load/resume response). Local
+  close/delete lifecycle is always available and remote close/delete is
+  best-effort when the agent declares support.
+- **storage semantics**: event writes are queued and write failures emit
+  `storage/write-failed` diagnostics, which are not recursively persisted.
+  Lifecycle tombstones for close/delete are strict commits: if they cannot be
+  written, the API rejects and the closed/deleted success state is not
+  published. JSONL storage skips malformed lines during restore and rewrites via
+  a temporary file followed by rename. `restoreSessions` skips closed/deleted
+  metadata and stored events that are not structured-clone safe; restored
+  sessions are marked `disconnected`.
 - **dispose semantics**: all agents are marked `disposed` (terminal reason
   `disposed`), their sessions broadcast `disconnected`, and pending permissions
   are `superseded`.
@@ -263,31 +248,24 @@ reduction. The `agent/spawn` diagnostic records only env key names, never values
   missing required parameters are both rejected with `acpjs/config-invalid`.
   Exceptions thrown by an inbound handler are isolated and reported as a
   `subscriber/error` diagnostic event, without interrupting dispatch
-  to the other handlers. Permission push-back — the endpoint subscribes to the
-  event streams of the sessions it creates/loads/restores;
-  `permission-request-created` is forwarded to all inbound handlers after a
-  microtask (those already resolved by auto policy are not forwarded, but the
-  event audit trail is retained); still-pending requests are re-sent to
-  late-registering handlers; `InboundRequest.id` equals `requestId`;
-  `respondInbound` is `respondPermission`, and a second answer is rejected with
+  to the other handlers. Permission push-back subscribes to host-level
+  `permission-updated` projections, not per-session event streams. Pending
+  requests are forwarded as `InboundRequest` with `id === requestId`;
+  answered/superseded projections clear outstanding entries. `respondInbound`
+  is `respondPermission`, and a second answer is rejected with
   `acpjs/already-answered`.
-- **terminal output broadcast boundary**: only the default terminal handler
-  (`createDefaultTerminalHandler`) broadcasts a `terminal-output` session event
-  via `bus.emitSession` on stdout/stderr data; a custom handler injected through
-  `HostOptions.terminal` does not. The delta is a per-chunk raw UTF-8 decode,
-  unaffected by the handler-side `outputByteLimit`. The reduce side imposes an
-  independent cumulative hard cap of **1 MiB** on
-  `SessionState.terminals[id].output`; on overflow it drops from the oldest end
-  (the head of the string) along UTF-8 character boundaries (via the protocol's
-  `truncateUtf8Tail`) and sets `truncated: true`, keeping the newest tail. Under
-  high throughput or multibyte streams the handler view (`terminalOutput` RPC)
-  and the reduce view (`state.terminals`) may briefly disagree. The default
-  handler's own per-terminal `outputByteLimit` truncation also uses
-  `truncateUtf8Tail`, so character boundaries are preserved there too.
-- **SessionMeta persistence**: after a successful `createSession`,
-  `storage.appendMeta` writes one `{ sessionId, agentDefinitionId, cwd }` record
-  (`agentDefinitionId` / `cwd` keys omitted when absent); `restoreSessions`
-  reads meta from `storage.listSessions()` and backfills `cwd` /
-  `agentDefinitionId` into the rebuilt session, so consumers need not maintain
-  their own sessionId-to-cwd/agent mapping. Meta records MUST NOT be returned by
-  `loadEvents` as events and do not participate in event replay.
+- **terminal capability boundary**: host default terminal support is disabled.
+  A terminal handler must implement create/output/wait/kill/release plus
+  `cleanupSession` before `terminal: true` is declared to the agent. close/delete
+  call `cleanupSession(sessionId)`. The exported `createDefaultTerminalHandler`
+  can be injected by applications that want Node child-process terminals.
+- **SessionMeta persistence**: after successful `createSession` or
+  `resumeSession`, `storage.appendMeta` writes protocol config metadata
+  (`sessionId`, `agentDefinitionId?`, `cwd`, `mcpServers?`,
+  `additionalDirectories`, `title?`, `updatedAt?`). `restoreSessions` rebuilds
+  disconnected sessions from meta and event logs. Meta
+  records MUST NOT be returned by `loadEvents` as events and do not participate
+  in event replay. Destructive `loadSession` builds a replacement session
+  history in memory and calls `storage.replaceSession(sessionId, meta, events)`
+  as a strict commit before publishing the replacement events to live
+  subscribers. `host.dispose()` waits for queued event and metadata writes.

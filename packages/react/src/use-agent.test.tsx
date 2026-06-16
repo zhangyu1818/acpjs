@@ -34,7 +34,9 @@ test('useAgent is undefined until the agent is spawned, then returns the stable 
   })
 
   expect(seen.at(-1)).toBe(spawned)
-  expect(seen.at(-1)?.capabilities).toEqual({ loadSession: true })
+  expect(seen.at(-1)?.getSnapshot().capabilities).toEqual({
+    loadSession: true,
+  })
 })
 
 test('swapping the provider client re-subscribes to the new client and unsubscribes the old one', async () => {
@@ -79,7 +81,7 @@ function StatusProbe(): ReactElement {
   )
 }
 
-test('a host agent-status-change re-renders useAgent with the updated snapshot', async () => {
+test('a host agent-updated projection re-renders useAgent with the updated snapshot', async () => {
   const harness = createTestHarness()
   render(
     <AcpProvider client={harness.client}>
@@ -97,8 +99,9 @@ test('a host agent-status-change re-renders useAgent with the updated snapshot',
   act(() => {
     harness.emitHost({
       agentId: 'agent-1',
-      type: 'agent-status-change',
+      type: 'agent-updated',
       payload: {
+        agentId: 'agent-1',
         status: 'exited',
         restartCount: 0,
         reason: 'crashed',
@@ -116,7 +119,7 @@ test('a host agent-status-change re-renders useAgent with the updated snapshot',
   })
 })
 
-test('an agent-status-change without a state change neither re-renders nor swaps the snapshot reference', async () => {
+test('an agent-updated projection without a state change neither re-renders nor swaps the snapshot reference', async () => {
   const harness = createTestHarness()
   let renders = 0
   function Probe(): null {
@@ -139,8 +142,8 @@ test('an agent-status-change without a state change neither re-renders nor swaps
   act(() => {
     harness.emitHost({
       agentId: 'agent-1',
-      type: 'agent-status-change',
-      payload: { status: 'ready', restartCount: 0 },
+      type: 'agent-updated',
+      payload: { agentId: 'agent-1', status: 'ready', restartCount: 0 },
     })
   })
 

@@ -139,5 +139,3 @@ The ACP spec leaves several points implementation-defined. This package resolves
 - **`meta` pass-through** — registry-sourced `AgentDefinition`s carry `meta: { name, version, registryId, icon? }`.
 - **Download granularity** — the `downloading` stage streams `response.body` and emits `{ stage: 'downloading', downloadedBytes, totalBytes? }` after each chunk (`downloadedBytes` is monotonically increasing; `totalBytes` is taken from the response `content-length` and omitted when absent, while `downloadedBytes` is still reported per chunk). When `response.body` is not streamable, it falls back to a single non-chunked read (no `downloadedBytes`; only the stage marker is emitted). Empty chunks are skipped.
 - **Subscriber isolation** — a listener that throws is caught and ignored; dispatch to the remaining subscribers continues.
-  </content>
-  </invoke>

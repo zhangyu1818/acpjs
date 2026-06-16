@@ -7,14 +7,18 @@ export type {
   AcpClient,
   AcpSession,
   AgentDefinition,
-  AgentSnapshot,
   ChangeListener,
   ConnectionStatusSnapshot,
+  CreateOrLoadSessionParams,
   CreateAcpClientOptions,
   PermissionListener,
   PermissionRequest,
+  ResumeSessionParams,
   SessionConfigValue,
-  SessionCreateParams,
   SessionListParams,
-  SessionSnapshot,
 } from './types.ts'
+export type {
+  AgentSnapshotWire,
+  DiagnosticEvent,
+  SessionSnapshotWire,
+} from '@acpjs/protocol'

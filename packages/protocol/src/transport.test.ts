@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 
 import {
   ACP_ERROR_CODES,
-  ACP_RPC_METHODS,
+  ACPJS_HOST_RPC_METHODS,
   isAcpErrorCode,
   type SessionSnapshotWire,
 } from './index'
@@ -15,7 +15,6 @@ test('error codes form the closed acpjs/* namespace required by the spec', () =>
     sessionClosed: 'acpjs/session-closed',
     agentExited: 'acpjs/agent-exited',
     capabilityUnsupported: 'acpjs/capability-unsupported',
-    authRequired: 'acpjs/auth-required',
     agentError: 'acpjs/agent-error',
     transportClosed: 'acpjs/transport-closed',
   })
@@ -23,10 +22,8 @@ test('error codes form the closed acpjs/* namespace required by the spec', () =>
 })
 
 test('rpc method names form the single wire contract shared by core and client', () => {
-  expect(ACP_RPC_METHODS).toEqual({
+  expect(ACPJS_HOST_RPC_METHODS).toEqual({
     spawnAgent: 'agents/spawn',
-    authenticate: 'agents/authenticate',
-    logout: 'agents/logout',
     createSession: 'sessions/create',
     loadSession: 'sessions/load',
     listSessions: 'sessions/list',
@@ -41,22 +38,31 @@ test('rpc method names form the single wire contract shared by core and client',
     restoreSessions: 'sessions/restore',
     listAgents: 'agents/list',
   })
-  expect(Object.isFrozen(ACP_RPC_METHODS)).toBe(true)
+  expect(Object.isFrozen(ACPJS_HOST_RPC_METHODS)).toBe(true)
 })
 
-test('a session snapshot wire object carries id and status with optional agent and cwd', () => {
+test('a session snapshot wire object carries the full session projection shape', () => {
   const minimal = {
     sessionId: 'sess-1',
     status: 'disconnected',
+    cwd: '',
+    additionalDirectories: [],
   } satisfies SessionSnapshotWire
   const full = {
     sessionId: 'sess-2',
     status: 'active',
     agentId: 'agent-1',
     cwd: '/workspace',
+    mcpServers: [],
+    additionalDirectories: ['/extra'],
     agentDefinitionId: 'claude-code',
   } satisfies SessionSnapshotWire
-  expect(minimal).toEqual({ sessionId: 'sess-1', status: 'disconnected' })
+  expect(minimal).toEqual({
+    sessionId: 'sess-1',
+    status: 'disconnected',
+    cwd: '',
+    additionalDirectories: [],
+  })
   expect(full.agentId).toBe('agent-1')
   expect(full.cwd).toBe('/workspace')
   expect(full.agentDefinitionId).toBe('claude-code')

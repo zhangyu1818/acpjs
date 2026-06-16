@@ -1,5 +1,4 @@
 import type {
-  AuthMethod,
   AvailableCommand,
   ContentBlock,
   Cost,
@@ -17,7 +16,7 @@ import type {
   Usage,
 } from '@agentclientprotocol/sdk'
 
-import type { SessionStatus } from './events'
+import type { SessionStatus } from './domain'
 
 export type MessageKind = 'user' | 'agent' | 'thought'
 
@@ -55,7 +54,6 @@ export interface SessionUsageState {
 export interface SessionConnectionState {
   status: SessionStatus
   resumed: boolean
-  authMethods: AuthMethod[] | null
 }
 
 export interface PendingPermissionRequest {
@@ -110,7 +108,7 @@ export function createInitialSessionState(sessionId: string): SessionState {
     lastTurnUsage: null,
     lastStopReason: null,
     lastPromptError: null,
-    connection: { status: 'creating', resumed: false, authMethods: null },
+    connection: { status: 'creating', resumed: false },
     pendingPermissionRequests: [],
     terminals: {},
     resolvedPermissionRequests: [],

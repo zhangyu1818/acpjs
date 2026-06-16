@@ -23,11 +23,11 @@ test('host options apply spec defaults', () => {
     factor: 2,
     maxMs: 30_000,
   })
-  expect(options.permissionPolicy).toEqual([])
   expect(options.killTimeoutMs).toBe(5000)
   expect(typeof options.storage.appendEvent).toBe('function')
   expect(typeof options.storage.listSessions).toBe('function')
   expect(typeof options.storage.loadEvents).toBe('function')
+  expect(typeof options.storage.replaceSession).toBe('function')
 })
 
 test('resolved host options are frozen', () => {
@@ -35,7 +35,6 @@ test('resolved host options are frozen', () => {
 
   expect(Object.isFrozen(options)).toBe(true)
   expect(Object.isFrozen(options.restartBackoff)).toBe(true)
-  expect(Object.isFrozen(options.permissionPolicy)).toBe(true)
 })
 
 test('invalid restart mode throws acpjs/config-invalid synchronously', () => {
@@ -70,16 +69,7 @@ test('invalid restartBackoff throws acpjs/config-invalid', () => {
   ).toMatchObject({ code: 'acpjs/config-invalid' })
 })
 
-test('invalid permissionPolicy action throws acpjs/config-invalid', () => {
-  expect(
-    captureError(() =>
-      resolveHostOptions({ permissionPolicy: [{ action: 'deny' as never }] }),
-    ),
-  ).toMatchObject({ code: 'acpjs/config-invalid' })
-})
-
 test.each([
-  ['permissionPolicy is not an array', { permissionPolicy: 'allow' as never }],
   ['killTimeoutMs is zero', { killTimeoutMs: 0 }],
   ['killTimeoutMs is negative', { killTimeoutMs: -1 }],
   ['killTimeoutMs is not a number', { killTimeoutMs: '5s' as never }],
@@ -89,8 +79,41 @@ test.each([
     {
       storage: {
         appendEvent: () => Promise.resolve(),
+        appendMeta: () => Promise.resolve(),
         listSessions: () => Promise.resolve([]),
       } as never,
+    },
+  ],
+  [
+    'storage adapter misses replaceSession',
+    {
+      storage: {
+        appendEvent: () => Promise.resolve(),
+        appendMeta: () => Promise.resolve(),
+        listSessions: () => Promise.resolve([]),
+        loadEvents: () => Promise.resolve([]),
+      } as never,
+    },
+  ],
+  ['fs handler method is not a function', { fs: { readTextFile: true } }],
+  [
+    'terminal handler method is not a function',
+    { terminal: { createTerminal: true } },
+  ],
+  [
+    'terminal handler is partial',
+    { terminal: { createTerminal: async () => ({ terminalId: 't' }) } },
+  ],
+  [
+    'terminal handler misses cleanupSession',
+    {
+      terminal: {
+        createTerminal: async () => ({ terminalId: 't' }),
+        terminalOutput: async () => ({ output: '', truncated: false }),
+        waitForTerminalExit: async () => ({}),
+        killTerminal: async () => ({}),
+        releaseTerminal: async () => ({}),
+      },
     },
   ],
 ])('invalid host options throw acpjs/config-invalid: %s', (_name, raw) => {

@@ -7,7 +7,6 @@ export const ACP_ERROR_CODES = Object.freeze({
   sessionClosed: 'acpjs/session-closed',
   agentExited: 'acpjs/agent-exited',
   capabilityUnsupported: 'acpjs/capability-unsupported',
-  authRequired: 'acpjs/auth-required',
   agentError: 'acpjs/agent-error',
   transportClosed: 'acpjs/transport-closed',
 } as const)
@@ -70,6 +69,10 @@ export type TransportUnsubscribe = () => void
 export interface TransportHandlers {
   onInboundRequest: (request: InboundRequest) => void
   onLifecycle: (event: TransportLifecycleEvent) => void
+  onSubscriptionError?: (
+    params: TransportSubscribeParams,
+    error: ErrorObject,
+  ) => void
 }
 
 export interface EnvelopeEndpoint {

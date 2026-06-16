@@ -1,77 +1,37 @@
-import { resolve } from 'node:path'
-
-import { ACP_ERROR_CODES, type AcpSessionEvent } from '@acpjs/protocol'
-
-import { AcpError } from './errors.ts'
 import {
   isStructuredCloneable,
   type AgentHandle,
   type SessionHandle,
 } from './internal.ts'
-import { requireCapability, type SessionManager } from './session-manager.ts'
 
-import type { LoadSessionResponse, McpServer } from '@agentclientprotocol/sdk'
+import type { AcpSessionEvent } from '@acpjs/protocol'
 
+import type { SessionManager } from './session-manager.ts'
 import type { StorageAdapter } from './storage.ts'
 
-export async function loadIntoAgent(
-  manager: SessionManager,
-  handle: AgentHandle,
-  session: SessionHandle,
-): Promise<void> {
-  const conn = handle.conn
-  if (!conn) {
-    throw new AcpError(ACP_ERROR_CODES.agentExited, 'agent not connected')
+function closeStalePermissions(events: AcpSessionEvent[]): AcpSessionEvent[] {
+  const pending = new Set<string>()
+  for (const event of events) {
+    if (event.type === 'permission-request-created') {
+      pending.add(event.payload.requestId)
+    } else if (event.type === 'permission-request-resolved') {
+      pending.delete(event.payload.requestId)
+    }
   }
-  manager.bus.setSessionStatus(session, 'resuming')
-  session.suppressUpdates = true
-  let response: LoadSessionResponse
-  try {
-    response = await manager.runtime.track(
-      handle,
-      conn.loadSession({
-        sessionId: session.sessionId,
-        cwd: session.cwd,
-        mcpServers: session.mcpServers,
-      }),
-    )
-  } catch (error) {
-    session.suppressUpdates = false
-    manager.bus.diagnostic('warn', 'session/load-failed', {
-      message: error instanceof Error ? error.message : String(error),
-      agentId: handle.agentId,
-      sessionId: session.sessionId,
+  if (pending.size === 0) return events
+  const next = [...events]
+  let seq = next.at(-1)?.seq ?? 0
+  for (const requestId of pending) {
+    seq += 1
+    next.push({
+      sessionId: events[0]?.sessionId ?? '',
+      seq,
+      ts: Date.now(),
+      type: 'permission-request-resolved',
+      payload: { requestId, status: 'superseded' },
     })
-    manager.bus.setSessionStatus(session, 'disconnected')
-    throw error
   }
-  session.suppressUpdates = false
-  session.hasModes = session.hasModes || response.modes != null
-  session.hasConfigOptions =
-    session.hasConfigOptions || response.configOptions != null
-  manager.bus.emitConfigInit(session, response, false)
-  manager.bus.setSessionStatus(session, 'active', { resumed: true })
-}
-
-export async function loadSessionOp(
-  manager: SessionManager,
-  agentId: string,
-  sessionId: string,
-  params: { cwd?: string; mcpServers?: McpServer[] },
-): Promise<void> {
-  const { handle } = manager.runtime.requireReady(agentId)
-  requireCapability(handle.capabilities?.loadSession === true, 'session/load')
-  const session = manager.require(sessionId)
-  if (params.cwd !== undefined) session.cwd = resolve(params.cwd)
-  if (params.mcpServers !== undefined) session.mcpServers = params.mcpServers
-  if (session.cwd === '') {
-    throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
-      'cwd required to load a restored session',
-    )
-  }
-  session.agentId = agentId
-  await loadIntoAgent(manager, handle, session)
+  return next
 }
 
 export async function recoverSessions(
@@ -83,18 +43,32 @@ export async function recoverSessions(
       session.agentId === handle.agentId && session.status === 'disconnected',
   )
   for (const session of disconnected) {
-    if (handle.capabilities?.loadSession === true) {
-      try {
-        await loadIntoAgent(manager, handle, session)
-      } catch {
-        continue
-      }
-    } else {
+    if (session.log.length === 0) {
       manager.bus.diagnostic('info', 'session/recovery-skipped', {
-        message: 'agent does not support session/load',
+        message: 'session has no local event log',
         agentId: handle.agentId,
         sessionId: session.sessionId,
       })
+      continue
+    }
+    if (!handle.capabilities?.sessionCapabilities?.resume) {
+      manager.bus.diagnostic('info', 'session/recovery-skipped', {
+        message: 'agent does not support session/resume',
+        agentId: handle.agentId,
+        sessionId: session.sessionId,
+      })
+      continue
+    }
+    try {
+      await manager.resume(handle.agentId, session.sessionId, {
+        cwd: session.cwd,
+        ...(session.mcpServers === undefined
+          ? {}
+          : { mcpServers: session.mcpServers }),
+        additionalDirectories: session.additionalDirectories,
+      })
+    } catch {
+      continue
     }
   }
 }
@@ -106,6 +80,10 @@ export async function restoreSessions(
   const metas = await storage.listSessions()
   const restored: SessionHandle[] = []
   for (const meta of metas) {
+    if (meta.lifecycle === 'closed' || meta.lifecycle === 'deleted') {
+      manager.markTombstone(meta.sessionId, meta.lifecycle)
+      continue
+    }
     if (manager.sessions.has(meta.sessionId)) continue
     const events = await storage.loadEvents(meta.sessionId)
     const valid: AcpSessionEvent[] = []
@@ -119,35 +97,60 @@ export async function restoreSessions(
       }
       valid.push(event as AcpSessionEvent)
     }
+    const eventsWithClosedPermissions = closeStalePermissions(valid)
+    const lastRestoredStatus = eventsWithClosedPermissions.findLast(
+      (event) => event.type === 'session-status-change',
+    )
+    if (
+      lastRestoredStatus?.type === 'session-status-change' &&
+      (lastRestoredStatus.payload.status === 'closed' ||
+        lastRestoredStatus.payload.status === 'deleted')
+    ) {
+      manager.markTombstone(meta.sessionId, lastRestoredStatus.payload.status)
+      continue
+    }
     const session: SessionHandle = {
       sessionId: meta.sessionId,
       status: 'disconnected',
-      cwd: meta.cwd ?? '',
-      mcpServers: [],
-      log: valid,
-      nextSeq: (valid.at(-1)?.seq ?? 0) + 1,
+      cwd: meta.cwd,
+      ...(meta.mcpServers === undefined ? {} : { mcpServers: meta.mcpServers }),
+      additionalDirectories: meta.additionalDirectories,
+      log: eventsWithClosedPermissions,
+      nextSeq: (eventsWithClosedPermissions.at(-1)?.seq ?? 0) + 1,
       hasModes: false,
       hasConfigOptions: false,
-      suppressUpdates: false,
       subscribers: new Set(),
       ...(meta.agentDefinitionId === undefined
         ? {}
         : { agentDefinitionId: meta.agentDefinitionId }),
+      ...(meta.title === undefined ? {} : { title: meta.title }),
+      ...(meta.updatedAt === undefined ? {} : { updatedAt: meta.updatedAt }),
     }
     manager.sessions.set(session.sessionId, session)
-    const lastStatus = valid.findLast(
-      (event) => event.type === 'session-status-change',
-    )
+    await manager.bus.replaceSession(session, {
+      sessionId: session.sessionId,
+      ...(session.agentDefinitionId === undefined
+        ? {}
+        : { agentDefinitionId: session.agentDefinitionId }),
+      cwd: session.cwd,
+      ...(session.mcpServers === undefined
+        ? {}
+        : { mcpServers: session.mcpServers }),
+      additionalDirectories: session.additionalDirectories,
+      ...(session.title === undefined ? {} : { title: session.title }),
+      ...(session.updatedAt === undefined
+        ? {}
+        : { updatedAt: session.updatedAt }),
+      lifecycle: 'open',
+    })
     if (
-      lastStatus?.type !== 'session-status-change' ||
-      lastStatus.payload.status !== 'disconnected'
+      lastRestoredStatus?.type !== 'session-status-change' ||
+      lastRestoredStatus.payload.status !== 'disconnected'
     ) {
       manager.bus.setSessionStatus(session, 'disconnected')
+    } else {
+      manager.bus.emitSessionUpdated(session)
     }
-    manager.bus.emitSessionLifecycle('session-created', {
-      sessionId: session.sessionId,
-      status: 'disconnected',
-    })
     restored.push(session)
   }
   return restored

@@ -1,9 +1,11 @@
 import type {
   AcpHostEvent,
   AcpSessionEvent,
+  CreateOrLoadSessionParams,
   ErrorObject,
   InboundRequest,
   InboundResponse,
+  ResumeSessionParams,
   RpcRequest,
   Transport,
   TransportHandlers,
@@ -16,6 +18,29 @@ type MethodHandler = (params: Record<string, unknown>) => unknown
 type HostEventInput<T = AcpHostEvent> = T extends AcpHostEvent
   ? Omit<T, 'seq' | 'ts'>
   : never
+
+export function sessionParams(
+  cwd = '/tmp',
+  overrides: Partial<CreateOrLoadSessionParams> = {},
+): CreateOrLoadSessionParams {
+  return {
+    cwd,
+    mcpServers: [],
+    additionalDirectories: [],
+    ...overrides,
+  }
+}
+
+export function resumeParams(
+  cwd = '/tmp',
+  overrides: Partial<ResumeSessionParams> = {},
+): ResumeSessionParams {
+  return {
+    cwd,
+    additionalDirectories: [],
+    ...overrides,
+  }
+}
 
 export interface FakeConnection {
   transport: Transport
@@ -34,6 +59,10 @@ export interface FakeHub {
   ) => void
   emitRaw: (event: AcpSessionEvent) => void
   emitHost: (event: HostEventInput) => void
+  failSubscription: (
+    params: TransportSubscribeParams,
+    error: ErrorObject,
+  ) => void
   pushInbound: (request: InboundRequest) => void
   pushPermission: (payload: {
     requestId: string
@@ -207,6 +236,11 @@ export function createFakeHub(): FakeHub {
       hostLog.push(hostEvent)
       for (const deliver of hostSubscribers) deliver(hostEvent)
     },
+    failSubscription(params, error) {
+      for (const target of connections) {
+        target.onSubscriptionError?.(params, error)
+      }
+    },
     pushInbound(request) {
       for (const target of connections) target.onInboundRequest(request)
     },
@@ -217,6 +251,17 @@ export function createFakeHub(): FakeHub {
         payload,
       }
       for (const target of connections) target.onInboundRequest(request)
+      const hostEvent = {
+        type: 'permission-updated',
+        payload: { ...payload, status: 'pending' },
+      } as HostEventInput
+      const event = {
+        ...hostEvent,
+        seq: hostLog.length + 1,
+        ts: 0,
+      } as AcpHostEvent
+      hostLog.push(event)
+      for (const deliver of hostSubscribers) deliver(event)
     },
     onRespondInbound(handler) {
       respondInboundHandler = handler

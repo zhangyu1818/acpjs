@@ -1,14 +1,23 @@
 import { expect, test } from 'vitest'
 
 import { createAcpClient } from './index.ts'
-import { createFakeHub, type FakeHub } from './test-support.ts'
+import { createFakeHub, sessionParams, type FakeHub } from './test-support.ts'
 
 import type { SessionState } from '@acpjs/protocol'
 
 function hubWithSession(sessionId = 'sess-1'): FakeHub {
   const hub = createFakeHub()
   hub.handle('agents/spawn', () => ({ agentId: 'agent-1' }))
-  hub.handle('sessions/create', () => ({ status: 'active', sessionId }))
+  hub.handle('sessions/create', () => {
+    hub.emit(sessionId, 'session-status-change', { status: 'active' })
+    return {
+      status: 'active',
+      sessionId,
+      agentId: 'agent-1',
+      cwd: '/tmp',
+      additionalDirectories: [],
+    }
+  })
   return hub
 }
 
@@ -17,7 +26,7 @@ test('sessions.create subscribes the session event stream and reduces it into Se
   const client = createAcpClient({ transport: hub.connection().transport })
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })
 
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   expect(session.sessionId).toBe('sess-1')
   expect(hub.requests.at(-1)).toMatchObject({
@@ -49,7 +58,7 @@ test('sessions.create subscribes the session event stream and reduces it into Se
         { type: 'text', text: 'Hel' },
         { type: 'text', text: 'lo' },
       ],
-      seq: 1,
+      seq: 2,
     },
   ])
 })
@@ -58,7 +67,7 @@ test('getSnapshot returns a cached immutable reference until a new event arrives
   const hub = hubWithSession()
   const client = createAcpClient({ transport: hub.connection().transport })
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   const first = session.getSnapshot()
   expect(session.getSnapshot()).toBe(first)
@@ -76,7 +85,7 @@ test('replayed duplicates (seq already applied) are ignored without producing a 
   const hub = hubWithSession()
   const client = createAcpClient({ transport: hub.connection().transport })
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   hub.emit('sess-1', 'agent-message-chunk', {
     content: { type: 'text', text: 'once' },
@@ -101,7 +110,7 @@ test('an unsubscribed state listener stops receiving while remaining listeners s
   const hub = hubWithSession()
   const client = createAcpClient({ transport: hub.connection().transport })
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   const first: SessionState[] = []
   const second: SessionState[] = []
@@ -124,7 +133,7 @@ test('a throwing state listener does not prevent the remaining listeners from be
   const hub = hubWithSession()
   const client = createAcpClient({ transport: hub.connection().transport })
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })
-  const session = await agent.sessions.create({ cwd: '/tmp' })
+  const session = await agent.sessions.create(sessionParams('/tmp'))
 
   const seen: SessionState[] = []
   session.subscribe(() => {
@@ -144,7 +153,7 @@ test('a late subscriber catches up via fromSeq replay to a deeply equal state (I
   hub.handle('sessions/load', () => null)
   const clientA = createAcpClient({ transport: hub.connection().transport })
   const agentA = await clientA.agents.spawn({ id: 'a', command: 'node' })
-  const sessionA = await agentA.sessions.create({ cwd: '/tmp' })
+  const sessionA = await agentA.sessions.create(sessionParams('/tmp'))
 
   hub.emit('sess-1', 'session-config-init', {
     modes: {
@@ -163,7 +172,7 @@ test('a late subscriber catches up via fromSeq replay to a deeply equal state (I
 
   const clientB = createAcpClient({ transport: hub.connection().transport })
   const agentB = await clientB.agents.spawn({ id: 'a', command: 'node' })
-  const sessionB = await agentB.sessions.load('sess-1', { cwd: '/tmp' })
+  const sessionB = await agentB.sessions.load('sess-1', sessionParams('/tmp'))
 
   expect(hub.requests.at(-1)).toMatchObject({
     method: 'sessions/load',

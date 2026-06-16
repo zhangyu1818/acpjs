@@ -8,6 +8,7 @@ import {
 import {
   createFakeHub,
   rejectionOf,
+  sessionParams,
   ScriptedError,
   type FakeHub,
 } from './test-support.ts'
@@ -28,7 +29,7 @@ async function setup(): Promise<{ hub: FakeHub; client: AcpClient }> {
   }))
   const client = createAcpClient({ transport: hub.connection().transport })
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })
-  await agent.sessions.create({ cwd: '/tmp' })
+  await agent.sessions.create(sessionParams('/tmp'))
   return { hub, client }
 }
 
@@ -169,16 +170,19 @@ test('dispose empties the pending snapshot', async () => {
   expect(client.permissions.getSnapshot()).toEqual([])
 })
 
-test('a permission resolved by someone else is pruned and subscribers are notified', async () => {
+test('a host permission projection resolved by someone else is pruned and subscribers are notified', async () => {
   const { hub, client } = await setup()
   hub.pushPermission(PERMISSION)
   const seen: (readonly PermissionRequest[])[] = []
   client.permissions.subscribe((requests) => seen.push(requests))
 
-  hub.emit('sess-1', 'permission-request-resolved', {
-    requestId: 'perm-1',
-    status: 'answered',
-    outcome: { outcome: 'selected', optionId: 'opt-allow' },
+  hub.emitHost({
+    type: 'permission-updated',
+    payload: {
+      ...PERMISSION,
+      status: 'answered',
+      outcome: { outcome: 'selected', optionId: 'opt-allow' },
+    },
   })
 
   expect(seen).toHaveLength(1)

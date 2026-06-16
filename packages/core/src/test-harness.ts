@@ -7,8 +7,10 @@ import { afterEach } from 'vitest'
 
 import type {
   AcpEvent,
-  AgentStatusChangePayload,
+  AgentSnapshotWire,
+  CreateOrLoadSessionParams,
   DiagnosticPayload,
+  ResumeSessionParams,
 } from '@acpjs/protocol'
 
 import type { AcpHost } from './host.ts'
@@ -50,6 +52,29 @@ export function collectEvents(
   return events
 }
 
+export function sessionParams(
+  cwd = '/tmp',
+  overrides: Partial<CreateOrLoadSessionParams> = {},
+): CreateOrLoadSessionParams {
+  return {
+    cwd,
+    mcpServers: [],
+    additionalDirectories: [],
+    ...overrides,
+  }
+}
+
+export function resumeParams(
+  cwd = '/tmp',
+  overrides: Partial<ResumeSessionParams> = {},
+): ResumeSessionParams {
+  return {
+    cwd,
+    additionalDirectories: [],
+    ...overrides,
+  }
+}
+
 export async function waitFor(
   predicate: () => boolean,
   timeoutMs = 5000,
@@ -74,12 +99,10 @@ export function diagnosticPayloads(
   return found
 }
 
-export function agentStatusPayloads(
-  events: AcpEvent[],
-): AgentStatusChangePayload[] {
-  const found: AgentStatusChangePayload[] = []
+export function agentStatusPayloads(events: AcpEvent[]): AgentSnapshotWire[] {
+  const found: AgentSnapshotWire[] = []
   for (const event of events) {
-    if (event.type === 'agent-status-change') found.push(event.payload)
+    if (event.type === 'agent-updated') found.push(event.payload)
   }
   return found
 }

@@ -4,7 +4,11 @@ import { act, render, screen } from '@testing-library/react'
 import { expect, test } from 'vitest'
 
 import { AcpProvider, useSession, type UseSessionResult } from './index.ts'
-import { createTestHarness, type TestHarness } from './test-support.ts'
+import {
+  createTestHarness,
+  sessionParams,
+  type TestHarness,
+} from './test-support.ts'
 
 function messageText(result: UseSessionResult): string {
   return result.state.messages
@@ -27,7 +31,7 @@ async function createSession(harness: TestHarness): Promise<void> {
       id: 'a',
       command: 'node',
     })
-    await agent.sessions.create({ cwd: '/tmp' })
+    await agent.sessions.create(sessionParams())
   })
 }
 
@@ -143,8 +147,8 @@ test('changing the sessionId argument switches the hook to the other session sta
       id: 'a',
       command: 'node',
     })
-    await agent.sessions.create({ cwd: '/tmp' })
-    await agent.sessions.create({ cwd: '/tmp' })
+    await agent.sessions.create(sessionParams())
+    await agent.sessions.create(sessionParams())
   })
   act(() => {
     harness.emit('sess-a', 'agent-message-chunk', {

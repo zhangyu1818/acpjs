@@ -5,12 +5,14 @@ export { createHostEndpoint } from './host-endpoint.ts'
 export {
   AcpHost,
   createAcpHost,
-  type AgentSnapshot,
+  type AgentSnapshotWire,
+  type CreateOrLoadSessionParams,
   type CreateSessionResult,
   type EventSubscriber,
   type PromptResult,
+  type ResumeSessionParams,
   type SessionConfigValue,
-  type SessionSnapshot,
+  type SessionSnapshotWire,
 } from './host.ts'
 export { normalizeSessionUpdate, type NormalizedUpdate } from './normalize.ts'
 export {
@@ -19,8 +21,6 @@ export {
   type AgentDefinition,
   type FsHandler,
   type HostOptions,
-  type PermissionPolicyAction,
-  type PermissionPolicyRule,
   type ResolvedAgentDefinition,
   type ResolvedHostOptions,
   type RestartBackoff,

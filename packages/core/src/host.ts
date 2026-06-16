@@ -1,12 +1,19 @@
-import { ACP_ERROR_CODES, type PromptFinishedPayload } from '@acpjs/protocol'
+import {
+  ACP_ERROR_CODES,
+  type AgentSnapshotWire,
+  type CreateOrLoadSessionParams,
+  type PromptFinishedPayload,
+  type ResumeSessionParams,
+  type SessionSnapshotWire,
+} from '@acpjs/protocol'
 
 import { AgentRuntime } from './agent-runtime.ts'
 import { deriveClientCapabilities } from './capabilities.ts'
 import { AcpError } from './errors.ts'
 import { EventBus, registerHostBus } from './event-bus.ts'
 import { createDefaultFsHandler } from './fs-handler.ts'
+import { createAgentClient } from './host-client.ts'
 import { capabilityEnabled, type EventSubscriber } from './internal.ts'
-import { normalizeSessionUpdate } from './normalize.ts'
 import {
   resolveAgentDefinition,
   resolveHostOptions,
@@ -17,38 +24,31 @@ import {
   type TerminalHandler,
 } from './options.ts'
 import { PermissionRouter } from './permission-router.ts'
+import { requireCapability } from './session-config.ts'
 import {
-  requireCapability,
   SessionManager,
   type CreateSessionResult,
   type SessionConfigValue,
 } from './session-manager.ts'
-import {
-  loadSessionOp,
-  recoverSessions,
-  restoreSessions,
-} from './session-recovery.ts'
-import {
-  agentSnapshot,
-  sessionSnapshot,
-  type AgentSnapshot,
-  type SessionSnapshot,
-} from './snapshots.ts'
-import { createDefaultTerminalHandler } from './terminal-handler.ts'
+import { recoverSessions, restoreSessions } from './session-recovery.ts'
+import { agentSnapshot, sessionSnapshot } from './snapshots.ts'
 
 import type {
-  Client,
   ContentBlock,
   ListSessionsResponse,
-  McpServer,
   RequestPermissionOutcome,
   SessionConfigOption,
-  SessionNotification,
 } from '@agentclientprotocol/sdk'
 
-export type { CreateSessionResult, SessionConfigValue }
+export type {
+  AgentSnapshotWire,
+  CreateOrLoadSessionParams,
+  CreateSessionResult,
+  ResumeSessionParams,
+  SessionConfigValue,
+  SessionSnapshotWire,
+}
 export type { EventSubscriber }
-export type { AgentSnapshot, SessionSnapshot }
 
 export type PromptResult = PromptFinishedPayload
 
@@ -66,17 +66,16 @@ export class AcpHost {
     this.#options = resolveHostOptions(options)
     this.#bus = new EventBus(this.#options.storage)
     registerHostBus(this, this.#bus)
-    this.#fsHandler = this.#options.fs ?? createDefaultFsHandler()
-    this.#terminalHandler =
-      this.#options.terminal ??
-      createDefaultTerminalHandler((sessionId, payload) => {
+    this.#fsHandler =
+      this.#options.fs ??
+      createDefaultFsHandler((sessionId) => {
         const session = this.#sessions.sessions.get(sessionId)
-        if (session) this.#bus.emitSession(session, 'terminal-output', payload)
+        return session
+          ? [session.cwd, ...session.additionalDirectories]
+          : undefined
       })
-    this.#router = new PermissionRouter(
-      this.#bus,
-      this.#options.permissionPolicy,
-    )
+    this.#terminalHandler = this.#options.terminal ?? {}
+    this.#router = new PermissionRouter(this.#bus)
     this.#runtime = new AgentRuntime({
       options: this.#options,
       bus: this.#bus,
@@ -84,7 +83,17 @@ export class AcpHost {
         this.#fsHandler,
         this.#terminalHandler,
       ),
-      createClient: () => this.#createClient(),
+      createClient: (handle) =>
+        createAgentClient(
+          {
+            sessions: this.#sessions,
+            bus: this.#bus,
+            router: this.#router,
+            fsHandler: this.#fsHandler,
+            terminalHandler: this.#terminalHandler,
+          },
+          handle.agentId,
+        ),
       onAgentDown: (handle) => {
         this.#router.supersedeForAgent(handle.agentId)
         this.#sessions.disconnectForAgent(handle.agentId)
@@ -94,14 +103,19 @@ export class AcpHost {
       },
       isHostDisposed: () => this.#disposed,
     })
-    this.#sessions = new SessionManager(this.#bus, this.#runtime, this.#router)
+    this.#sessions = new SessionManager(
+      this.#bus,
+      this.#runtime,
+      this.#router,
+      (sessionId) => this.#terminalHandler.cleanupSession?.(sessionId),
+    )
   }
 
   get options(): ResolvedHostOptions {
     return this.#options
   }
 
-  async spawnAgent(definition: AgentDefinition): Promise<AgentSnapshot> {
+  async spawnAgent(definition: AgentDefinition): Promise<AgentSnapshotWire> {
     if (this.#disposed) {
       throw new AcpError(ACP_ERROR_CODES.agentExited, 'host disposed')
     }
@@ -114,34 +128,29 @@ export class AcpHost {
     return snapshot
   }
 
-  getAgent(agentId: string): AgentSnapshot | undefined {
+  getAgent(agentId: string): AgentSnapshotWire | undefined {
     const handle = this.#runtime.agents.get(agentId)
     return handle ? agentSnapshot(handle) : undefined
   }
 
-  getAgents(): AgentSnapshot[] {
+  getAgents(): AgentSnapshotWire[] {
     return Array.from(this.#runtime.agents.values(), agentSnapshot)
   }
 
-  getSession(sessionId: string): SessionSnapshot | undefined {
+  getSession(sessionId: string): SessionSnapshotWire | undefined {
     const session = this.#sessions.sessions.get(sessionId)
     return session ? sessionSnapshot(session) : undefined
   }
 
-  getSessions(): SessionSnapshot[] {
+  getSessions(): SessionSnapshotWire[] {
     return Array.from(this.#sessions.sessions.values(), sessionSnapshot)
   }
 
   async createSession(
     agentId: string,
-    params: { cwd: string; mcpServers?: McpServer[] },
+    params: CreateOrLoadSessionParams,
   ): Promise<CreateSessionResult> {
     return this.#sessions.create(agentId, params)
-  }
-
-  async authenticate(agentId: string, methodId: string): Promise<void> {
-    const { handle, conn } = this.#runtime.requireReady(agentId)
-    await this.#runtime.track(handle, conn.authenticate({ methodId }))
   }
 
   async prompt(
@@ -171,20 +180,24 @@ export class AcpHost {
     return this.#runtime.track(handle, conn.listSessions(params))
   }
 
-  async resumeSession(sessionId: string): Promise<void> {
-    await this.#sessions.resume(sessionId)
+  async resumeSession(
+    agentId: string,
+    sessionId: string,
+    params: ResumeSessionParams,
+  ): Promise<void> {
+    await this.#sessions.resume(agentId, sessionId, params)
   }
 
-  async deleteSession(sessionId: string): Promise<void> {
-    await this.#sessions.delete(sessionId)
+  async deleteSession(agentId: string, sessionId: string): Promise<void> {
+    await this.#sessions.delete(agentId, sessionId)
   }
 
   async loadSession(
     agentId: string,
     sessionId: string,
-    params: { cwd?: string; mcpServers?: McpServer[] } = {},
+    params: CreateOrLoadSessionParams,
   ): Promise<void> {
-    await loadSessionOp(this.#sessions, agentId, sessionId, params)
+    await this.#sessions.load(agentId, sessionId, params)
   }
 
   async setMode(sessionId: string, modeId: string): Promise<void> {
@@ -197,15 +210,6 @@ export class AcpHost {
     value: SessionConfigValue,
   ): Promise<SessionConfigOption[]> {
     return this.#sessions.setConfigOption(sessionId, configId, value)
-  }
-
-  async logout(agentId: string): Promise<void> {
-    const { handle, conn } = this.#runtime.requireReady(agentId)
-    requireCapability(
-      capabilityEnabled(handle.capabilities?.auth?.logout),
-      'logout',
-    )
-    await this.#runtime.track(handle, conn.logout({}))
   }
 
   subscribe(
@@ -233,7 +237,7 @@ export class AcpHost {
     this.#router.respond(requestId, outcome)
   }
 
-  async restoreSessions(): Promise<SessionSnapshot[]> {
+  async restoreSessions(): Promise<SessionSnapshotWire[]> {
     const restored = await restoreSessions(
       this.#sessions,
       this.#options.storage,
@@ -249,62 +253,7 @@ export class AcpHost {
         this.#runtime.dispose(handle),
       ),
     )
-  }
-
-  #createClient(): Client {
-    const client: Client = {
-      sessionUpdate: async (notification) => {
-        this.#onSessionUpdate(notification)
-      },
-      requestPermission: (params) => {
-        const session = this.#sessions.sessions.get(params.sessionId)
-        if (!session) {
-          return Promise.resolve({
-            outcome: { outcome: 'cancelled' as const },
-          })
-        }
-        return this.#router.handle(session, params)
-      },
-    }
-    const { readTextFile, writeTextFile } = this.#fsHandler
-    if (readTextFile) client.readTextFile = readTextFile.bind(this.#fsHandler)
-    if (writeTextFile) {
-      client.writeTextFile = writeTextFile.bind(this.#fsHandler)
-    }
-    const terminal = this.#terminalHandler
-    const {
-      createTerminal,
-      terminalOutput,
-      waitForTerminalExit,
-      killTerminal,
-      releaseTerminal,
-    } = terminal
-    if (
-      createTerminal &&
-      terminalOutput &&
-      waitForTerminalExit &&
-      killTerminal &&
-      releaseTerminal
-    ) {
-      client.createTerminal = createTerminal.bind(terminal)
-      client.terminalOutput = terminalOutput.bind(terminal)
-      client.waitForTerminalExit = waitForTerminalExit.bind(terminal)
-      client.killTerminal = killTerminal.bind(terminal)
-      client.releaseTerminal = releaseTerminal.bind(terminal)
-    }
-    return client
-  }
-
-  #onSessionUpdate(notification: SessionNotification): void {
-    const session = this.#sessions.sessions.get(notification.sessionId)
-    if (!session || session.suppressUpdates) return
-    const normalized = normalizeSessionUpdate(notification.update)
-    this.#bus.emitSession(
-      session,
-      normalized.type,
-      normalized.payload,
-      normalized.extensions,
-    )
+    await this.#bus.flushStorage()
   }
 }
 

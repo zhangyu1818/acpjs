@@ -4,7 +4,7 @@ import { act, render, screen } from '@testing-library/react'
 import { expect, test } from 'vitest'
 
 import { AcpProvider, useAgents, useSession, useSessions } from './index.ts'
-import { createTestHarness } from './test-support.ts'
+import { createTestHarness, sessionParams } from './test-support.ts'
 
 import type { AcpAgent, AcpSession } from '@acpjs/client'
 import type { SessionState } from '@acpjs/protocol'
@@ -57,7 +57,7 @@ test('updates landing during a transition never tear across useSyncExternalStore
       id: 'a',
       command: 'node',
     })
-    await agent.sessions.create({ cwd: '/tmp' })
+    await agent.sessions.create(sessionParams())
   })
 
   for (let index = 0; index < 5; index += 1) {
@@ -114,7 +114,7 @@ test('registry snapshots never tear across reads during transitions', async () =
       id: 'a',
       command: 'node',
     })
-    await agent.sessions.create({ cwd: '/tmp' })
+    await agent.sessions.create(sessionParams())
   })
 
   const statuses = ['exited', 'restarting', 'ready', 'exited', 'ready'] as const
@@ -123,8 +123,8 @@ test('registry snapshots never tear across reads during transitions', async () =
       forceTransition()
       harness.emitHost({
         agentId: 'agent-1',
-        type: 'agent-status-change',
-        payload: { status, restartCount: 0 },
+        type: 'agent-updated',
+        payload: { agentId: 'agent-1', status, restartCount: 0 },
       })
       forceTransition()
     })
