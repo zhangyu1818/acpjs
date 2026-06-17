@@ -34,7 +34,9 @@ not code baked into the toolkit.
 ## Intentional non-goals (owned by the integrator, not gaps)
 
 - **Authentication** — acpjs implements no `authenticate` flow; an agent's authentication error
-  propagates through to the integrator, who handles login out of band.
+  propagates through to the integrator, who handles login out of band. The agent's advertised
+  `authMethods` (from `initialize`) are surfaced verbatim on the agent snapshot — surfacing the
+  methods is mechanism; choosing and performing the login is the integrator's decision.
 - **Project / workspace** — ACP has only per-session `cwd` + `additionalDirectories`; grouping and
   indexing are app-layer concerns.
 - **Permission decisions** — every `session/request_permission` floats up; the integrator decides

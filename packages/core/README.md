@@ -140,7 +140,12 @@ it.
 ## Snapshots
 
 `getAgent` / `getAgents` return `AgentSnapshotWire`:
-`{ agentId, status, restartCount, reason?, exit?, capabilities? }`.
+`{ agentId, status, restartCount, reason?, exit?, capabilities?, authMethods? }`.
+
+`authMethods` is the agent's advertised auth methods captured from the
+`initialize` response (`AuthMethod[]`, re-exported from `@acpjs/protocol`),
+surfaced verbatim and omitted until the handshake completes. acpjs still runs no
+authenticate flow; this is the data integrators read to drive out-of-band login.
 
 `getSession` / `getSessions` return `SessionSnapshotWire`:
 `{ sessionId, status, agentId?, cwd, mcpServers?, additionalDirectories, agentDefinitionId?, title?, updatedAt? }`.
@@ -173,9 +178,11 @@ reduction. The `agent/spawn` diagnostic records only env key names, never values
   cwds are absolutized with `path.resolve` before reaching the protocol.
 - **kill timeout**: defaults to 5s (`killTimeoutMs` is injectable); dispose ends
   stdin first (graceful), then sends `SIGKILL` on timeout.
-- **auth errors**: acpjs does not expose login APIs or auth state. Agent-side
-  authentication failures are propagated as agent JSON-RPC errors; callers
-  configure/login the agent outside acpjs and retry.
+- **auth errors**: acpjs runs no authenticate flow and exposes no login APIs or
+  auth state; it only surfaces the agent's advertised `authMethods` (see
+  Snapshots) for integrators to act on. Agent-side authentication failures are
+  propagated as agent JSON-RPC errors; callers configure/login the agent outside
+  acpjs and retry.
 - **prompt protocol-error event shape**: the `prompt-finished` event (and the
   `prompt` return value) uses `stopReason: 'end_turn'` as a placeholder and
   carries `error: { code, message, data? }`. `prompt` does not reject, except on

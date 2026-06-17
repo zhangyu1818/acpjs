@@ -150,9 +150,9 @@ Shared by `@acpjs/core` and `@acpjs/client` to avoid duplicated literals.
 
 ### SDK protocol re-exports
 
-Type-only, for contract consumers: `AgentCapabilities`, `ContentBlock`,
-`ListSessionsResponse`, `McpServer`, `RequestPermissionOutcome`,
-`SessionConfigOption`.
+Type-only, for contract consumers: `AgentCapabilities`, `AuthMethod`,
+`ContentBlock`, `ListSessionsResponse`, `McpServer`,
+`RequestPermissionOutcome`, `SessionConfigOption`.
 
 ## Event types (closed union)
 
@@ -199,6 +199,9 @@ state projection subset:
   (core normalizes `null` away; the reducer handles it defensively).
   `content`/`locations` are replaced wholesale. Updates to an unknown
   `toolCallId` leave state unchanged.
+- `ToolCallState.extensions?: AcpEventExtensions` carries a tool call's
+  `_meta`/extensions through `reduce` verbatim (e.g.
+  `extensions._meta.subagent_session_info`); acpjs interprets no keys.
 - `session-info-update`: tri-state semantics follow the SDK — an absent key means
   no change, an explicit `null` clears the field, a string replaces it.
 - `prompt-finished` does not change connection status (returning to `active` is
@@ -209,7 +212,11 @@ state projection subset:
   `disconnected`/`closed`/`deleted`, which resets it.
 - `AgentCapabilitiesWire` is an explicit stable ACP capability projection used
   by acpjs. It intentionally does not mirror SDK experimental/auth/provider
-  fields that are outside the acpjs product contract.
+  fields that are outside the acpjs product contract. The agent's advertised
+  auth methods are surfaced separately on the snapshot as
+  `AgentSnapshotWire.authMethods` (`AuthMethod[]`, the `initialize` response's
+  methods verbatim) — acpjs implements no authenticate flow, so this is the data
+  integrators read to drive out-of-band login.
 - `current-mode-update` arriving before any mode state synthesizes
   `{ currentModeId, availableModes: [] }`.
 - `diagnostic` agent attribution is expressed solely by the envelope `agentId`
