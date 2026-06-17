@@ -1,6 +1,6 @@
 {
   "name": "@acpjs/client",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "acpjs typed facade, reducer-driven snapshot+subscribe store, and in-process transport.",
   "license": "MIT",
   "repository": {
