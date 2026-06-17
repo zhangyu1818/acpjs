@@ -1,4 +1,5 @@
 import type {
+  AuthMethod,
   McpCapabilities,
   McpServer,
   NesCapabilities,
@@ -25,6 +26,7 @@ export interface AgentSnapshotWire {
   reason?: AgentExitReason
   exit?: { code?: number; signal?: string }
   capabilities?: AgentCapabilitiesWire
+  authMethods?: AuthMethod[]
 }
 
 export interface SessionSnapshotWire {

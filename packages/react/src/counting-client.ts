@@ -52,6 +52,9 @@ export function createCountingClient(
       stateListeners.add(listener)
       return () => stateListeners.delete(listener)
     },
+    onEvent() {
+      return () => {}
+    },
     async prompt() {
       return { stopReason: 'end_turn' }
     },

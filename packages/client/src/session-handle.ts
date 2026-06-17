@@ -12,12 +12,14 @@ import type { AcpSession, SessionConfigValue } from './types.ts'
 export function createSessionHandle(
   call: RpcCall,
   store: SessionStore,
+  onEvent: AcpSession['onEvent'],
 ): AcpSession {
   const sessionId = store.sessionId
   return Object.freeze({
     sessionId,
     getSnapshot: () => store.getSnapshot(),
     subscribe: (listener: StateListener) => store.subscribe(listener),
+    onEvent,
     async prompt(blocks: ContentBlock[]): Promise<PromptFinishedPayload> {
       return (await call(ACPJS_HOST_RPC_METHODS.prompt, {
         sessionId,

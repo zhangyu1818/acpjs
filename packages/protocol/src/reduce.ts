@@ -78,6 +78,7 @@ export function reduce(state: SessionState, event: AcpEvent): SessionState {
             locations: payload.locations ?? [],
             rawInput: payload.rawInput,
             rawOutput: payload.rawOutput,
+            ...(event.extensions ? { extensions: event.extensions } : {}),
             seq: event.seq,
           },
         },
@@ -95,6 +96,7 @@ export function reduce(state: SessionState, event: AcpEvent): SessionState {
       if (payload.locations != null) next.locations = payload.locations
       if ('rawInput' in payload) next.rawInput = payload.rawInput
       if ('rawOutput' in payload) next.rawOutput = payload.rawOutput
+      if (event.extensions) next.extensions = event.extensions
       return {
         ...state,
         toolCalls: { ...state.toolCalls, [payload.toolCallId]: next },

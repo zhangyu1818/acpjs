@@ -9,6 +9,7 @@ export * from './wire'
 
 export type {
   AgentCapabilities,
+  AuthMethod,
   ContentBlock,
   ListSessionsResponse,
   McpServer,

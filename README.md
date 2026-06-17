@@ -83,6 +83,10 @@ client.permissions.subscribe((requests) => {
 
 At the core layer the same pattern uses a host subscription plus `host.respondPermission(requestId, outcome)`. Anything you do not auto-answer simply stays pending until a human decides.
 
+### Recipes
+
+The integrator-owned patterns — plan history, per-turn grouping, discriminating auth (and other agent) errors by structured code, and joining a pending permission to its tool call — are written up as a few lines of integrator-side TypeScript over the public surface in [docs/recipes.md](./docs/recipes.md). They are documented conveniences, not code baked into the toolkit.
+
 ## Getting started
 
 ### Node, in-process

@@ -15,8 +15,8 @@ import { createRpcCaller } from './client-rpc.ts'
 import { AcpClientError, transportClosedError } from './errors.ts'
 import { notifyChange } from './internal.ts'
 import { createPermissionRegistry } from './permission-registry.ts'
+import { createSessionEvents } from './session-events.ts'
 import { createSessionHandle } from './session-handle.ts'
-import { createSessionStore, type SessionStore } from './store.ts'
 
 import type {
   AcpAgent,
@@ -31,7 +31,6 @@ import type {
 export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
   const transport = options.transport
   let closedError: ErrorObject | undefined
-  const stores = new Map<string, SessionStore>()
   const storeUnsubscribers = new Set<() => void>()
   const agents = new Map<string, AcpAgent>()
   const agentListeners = new Set<ChangeListener>()
@@ -49,7 +48,6 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
   }
 
   const sessions = new Map<string, AcpSession>()
-  const sessionUnsubscribers = new Map<string, () => void>()
   const sessionListeners = new Set<ChangeListener>()
   let sessionsSnapshot: readonly AcpSession[] = Object.freeze([])
 
@@ -64,6 +62,11 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
   const statusListeners = new Set<ChangeListener>()
   const permissions = createPermissionRegistry()
   const diagnostics = createDiagnosticsLog()
+  const sessionEvents = createSessionEvents({
+    subscribe: transport.subscribe,
+    storeUnsubscribers,
+    prune: (requestId) => permissions.prune(requestId),
+  })
 
   function ensureOpen(): void {
     if (closedError) throw new AcpClientError(closedError)
@@ -126,29 +129,15 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
     request: (request) => transport.request(request),
   })
 
-  function attachStore(sessionId: string): SessionStore {
-    const existing = stores.get(sessionId)
-    if (existing) return existing
-    const store = createSessionStore(sessionId)
-    stores.set(sessionId, store)
-    const unsubscribe = transport.subscribe(
-      { sessionId, fromSeq: store.lastSeq() },
-      (event) => {
-        if (event.type === 'permission-request-resolved') {
-          permissions.prune(event.payload.requestId)
-        }
-        store.apply(event)
-      },
-    )
-    storeUnsubscribers.add(unsubscribe)
-    sessionUnsubscribers.set(sessionId, unsubscribe)
-    return store
-  }
-
   function openSession(sessionId: string): AcpSession {
     const existing = sessions.get(sessionId)
     if (existing) return existing
-    const session = createSessionHandle(call, attachStore(sessionId))
+    const store = sessionEvents.attachStore(sessionId)
+    const session = createSessionHandle(
+      call,
+      store,
+      sessionEvents.onEventFor(store),
+    )
     sessions.set(sessionId, session)
     publishSessions()
     return session
@@ -156,11 +145,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
 
   function closeSessionHandle(sessionId: string): void {
     if (!sessions.delete(sessionId)) return
-    const unsubscribe = sessionUnsubscribers.get(sessionId)
-    unsubscribe?.()
-    if (unsubscribe) storeUnsubscribers.delete(unsubscribe)
-    sessionUnsubscribers.delete(sessionId)
-    stores.delete(sessionId)
+    sessionEvents.closeSession(sessionId)
     publishSessions()
   }
 
@@ -172,7 +157,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
       return undefined
     }
     const existing = sessions.has(snapshot.sessionId)
-    const store = attachStore(snapshot.sessionId)
+    const store = sessionEvents.attachStore(snapshot.sessionId)
     const changed = store.applyProjection(snapshot)
     const session = openSession(snapshot.sessionId)
     if (existing && changed) publishSessions()
@@ -309,6 +294,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
     async dispose(): Promise<void> {
       if (closedError) return
       closedError = transportClosedError()
+      sessionEvents.closeAll()
       for (const unsubscribe of storeUnsubscribers) unsubscribe()
       storeUnsubscribers.clear()
       permissions.clear()

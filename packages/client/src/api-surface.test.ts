@@ -9,6 +9,8 @@ test('the package export surface is sealed', () => {
     'AcpClientError',
     'createAcpClient',
     'createInProcessTransport',
+    'createInitialSessionState',
+    'reduce',
   ])
 })
 
@@ -76,6 +78,7 @@ test('facade objects expose no raw RPC, raw notification or selector escape hatc
     'cancel',
     'close',
     'getSnapshot',
+    'onEvent',
     'prompt',
     'sessionId',
     'setConfigOption',

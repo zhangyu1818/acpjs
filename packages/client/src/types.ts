@@ -1,4 +1,5 @@
 import type {
+  AcpSessionEvent,
   AgentDefinition,
   AgentSnapshotWire,
   ContentBlock,
@@ -21,10 +22,18 @@ import type {
 export type { AgentDefinition, SessionConfigValue }
 export type { CreateOrLoadSessionParams, ResumeSessionParams }
 
+export interface SessionEventOptions {
+  readonly fromSeq?: number
+}
+
 export interface AcpSession {
   readonly sessionId: string
   getSnapshot: () => SessionState
   subscribe: (listener: (state: SessionState) => void) => () => void
+  onEvent: (
+    listener: (event: AcpSessionEvent) => void,
+    options?: SessionEventOptions,
+  ) => () => void
   prompt: (blocks: ContentBlock[]) => Promise<PromptFinishedPayload>
   cancel: () => Promise<void>
   close: () => Promise<void>

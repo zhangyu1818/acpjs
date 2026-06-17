@@ -56,4 +56,29 @@ not code baked into the toolkit.
 - **Closed, typed surface** — every stable protocol capability has a typed entry point; there is no
   raw-RPC escape hatch. When the protocol grows, the toolkit grows with it.
 
+## Stability policy
+
+`AcpSessionEvent` and the per-session stream it travels on (surfaced via `onEvent`) are a **public,
+versioned contract**: the variant set, each variant's payload shape, and the `seq`/ordering
+semantics are guaranteed surface, not internal detail.
+
+- **Forward-compat valve.** UNSTABLE or unknown ACP session updates surface as the
+  `unrecognized-update` variant — never as a new typed variant smuggled in. The union absorbs
+  protocol growth through this one variant, so consumers don't break when the agent speaks ahead of
+  us. **Integrators MUST tolerate unknown/unrecognized events** (and unknown `extensions`); treat
+  the union as open at the `unrecognized-update` seam.
+- **`seq` is per-session and per-LOAD-EPOCH.** Within one load it is a dense, monotonic ordering key
+  starting at `1`. It **resets** on `session/load` (each load opens a fresh epoch, led by
+  `session-reset { reason: 'load' }`). It is **not** a durable cross-load cursor — do not persist it
+  as a resume token across loads; pair it with the load boundary if you need stable identity.
+- **Non-breaking (minor).** Adding a new variant to the union, or adding a new optional field to an
+  existing payload. Consumers already tolerating `unrecognized-update` and unknown fields absorb
+  these without change.
+- **Breaking (major).** Renaming/removing a variant, changing or removing a payload field (or
+  narrowing its type), or changing ordering / `seq` semantics.
+- **UNSTABLE stays unmodeled.** Protocol bits still UNSTABLE in ACP (e.g. incremental `plan_update` /
+  `plan_removed`) are not given typed variants until they stabilize; until then they arrive as
+  `unrecognized-update`. Consistent with the non-goals above — the toolkit grows only with the
+  stable protocol.
+
 See the [root README](../README.md) for the architecture diagram, packages, and usage.

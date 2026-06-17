@@ -36,6 +36,9 @@ export function agentSnapshot(handle: AgentHandle): AgentSnapshotWire {
     ...(handle.reason ? { reason: handle.reason } : {}),
     ...(handle.exit ? { exit: handle.exit } : {}),
     ...(capabilities ? { capabilities } : {}),
+    ...(handle.authMethods === undefined
+      ? {}
+      : { authMethods: handle.authMethods }),
   })
 }
 

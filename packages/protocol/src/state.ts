@@ -17,6 +17,7 @@ import type {
 } from '@agentclientprotocol/sdk'
 
 import type { SessionStatus } from './domain'
+import type { AcpEventExtensions } from './events'
 
 export type MessageKind = 'user' | 'agent' | 'thought'
 
@@ -36,6 +37,7 @@ export interface ToolCallState {
   locations: ToolCallLocation[]
   rawInput: unknown
   rawOutput: unknown
+  extensions?: AcpEventExtensions
   seq: number
 }
 

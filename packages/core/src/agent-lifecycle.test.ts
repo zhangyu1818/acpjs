@@ -30,6 +30,7 @@ test('spawnAgent walks spawning → initializing → ready and caches initialize
   const { definition } = await fixtureDefinition({
     initialize: {
       agentCapabilities: { loadSession: true },
+      authMethods: [{ id: 'oauth', name: 'OAuth' }],
     },
   })
 
@@ -38,6 +39,10 @@ test('spawnAgent walks spawning → initializing → ready and caches initialize
   expect(agent.agentId).toMatch(/^agent-\d+$/)
   expect(agent.status).toBe('ready')
   expect(agent.capabilities).toEqual({ loadSession: true })
+  expect(agent.authMethods).toEqual([{ id: 'oauth', name: 'OAuth' }])
+  expect(host.getAgent(agent.agentId)?.authMethods).toEqual([
+    { id: 'oauth', name: 'OAuth' },
+  ])
   expect(statuses(events)).toEqual(['spawning', 'initializing', 'ready'])
   const seqs = events.map((event) => event.seq)
   expect(seqs).toEqual(seqs.map((_, index) => index + 1))
@@ -199,4 +204,7 @@ test('getAgents returns a snapshot for every spawned agent including status', as
   )
   expect(agents.map((agent) => agent.status)).toEqual(['ready', 'ready'])
   expect(agents.map((agent) => agent.restartCount)).toEqual([0, 0])
+  for (const agent of agents) {
+    expect('authMethods' in agent).toBe(false)
+  }
 })

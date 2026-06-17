@@ -161,3 +161,125 @@ test('a tool call update for an unknown toolCallId leaves the state untouched', 
   })
   expect(next).toBe(initial)
 })
+
+test('a tool call event carries event extensions verbatim onto the tool call state', () => {
+  const extensions = {
+    _meta: {
+      subagent_session_info: {
+        sessionId: 's',
+        messageStartIndex: 0,
+        messageEndIndex: 3,
+      },
+    },
+  }
+  const state = run([
+    {
+      sessionId: 'sess-1',
+      seq: 1,
+      ts: 0,
+      type: 'tool-call',
+      payload: {
+        toolCallId: 'call-1',
+        title: 'Run subagent',
+        status: 'pending',
+      },
+      extensions,
+    },
+  ])
+  expect(state.toolCalls['call-1']?.extensions).toEqual(extensions)
+})
+
+test('a tool call event without extensions omits the extensions field entirely', () => {
+  const state = run([
+    {
+      sessionId: 'sess-1',
+      seq: 1,
+      ts: 0,
+      type: 'tool-call',
+      payload: { toolCallId: 'call-1', title: 'Read file', status: 'pending' },
+    },
+  ])
+  const call = state.toolCalls['call-1']
+  expect(call).toBeDefined()
+  expect('extensions' in call).toBe(false)
+})
+
+test('a tool call update carrying new extensions replaces the prior value', () => {
+  const state = run([
+    {
+      sessionId: 'sess-1',
+      seq: 1,
+      ts: 0,
+      type: 'tool-call',
+      payload: {
+        toolCallId: 'call-1',
+        title: 'Run subagent',
+        status: 'pending',
+      },
+      extensions: { _meta: { subagent_session_info: { sessionId: 'a' } } },
+    },
+    {
+      sessionId: 'sess-1',
+      seq: 2,
+      ts: 0,
+      type: 'tool-call-update',
+      payload: { toolCallId: 'call-1', status: 'in_progress' },
+      extensions: { _meta: { subagent_session_info: { sessionId: 'b' } } },
+    },
+  ])
+  expect(state.toolCalls['call-1']?.extensions).toEqual({
+    _meta: { subagent_session_info: { sessionId: 'b' } },
+  })
+})
+
+test('a tool call update without extensions preserves prior extensions unchanged', () => {
+  const extensions = { _meta: { subagent_session_info: { sessionId: 'a' } } }
+  const state = run([
+    {
+      sessionId: 'sess-1',
+      seq: 1,
+      ts: 0,
+      type: 'tool-call',
+      payload: {
+        toolCallId: 'call-1',
+        title: 'Run subagent',
+        status: 'pending',
+      },
+      extensions,
+    },
+    {
+      sessionId: 'sess-1',
+      seq: 2,
+      ts: 0,
+      type: 'tool-call-update',
+      payload: { toolCallId: 'call-1', status: 'completed' },
+    },
+  ])
+  expect(state.toolCalls['call-1']?.extensions).toEqual(extensions)
+})
+
+test('a tool call update with extensions adds them to a call that had none', () => {
+  const extensions = { _meta: { subagent_session_info: { sessionId: 'a' } } }
+  const state = run([
+    {
+      sessionId: 'sess-1',
+      seq: 1,
+      ts: 0,
+      type: 'tool-call',
+      payload: {
+        toolCallId: 'call-1',
+        title: 'Run subagent',
+        status: 'pending',
+      },
+    },
+    {
+      sessionId: 'sess-1',
+      seq: 2,
+      ts: 0,
+      type: 'tool-call-update',
+      payload: { toolCallId: 'call-1', status: 'in_progress' },
+      extensions,
+    },
+  ])
+  expect(state.toolCalls['call-1']?.extensions).toEqual(extensions)
+})

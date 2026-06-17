@@ -15,10 +15,14 @@ export type {
   PermissionRequest,
   ResumeSessionParams,
   SessionConfigValue,
+  SessionEventOptions,
   SessionListParams,
 } from './types.ts'
+export { createInitialSessionState, reduce } from '@acpjs/protocol'
 export type {
+  AcpSessionEvent,
   AgentSnapshotWire,
   DiagnosticEvent,
   SessionSnapshotWire,
+  SessionState,
 } from '@acpjs/protocol'

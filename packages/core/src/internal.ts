@@ -14,6 +14,7 @@ import type { ChildProcess } from 'node:child_process'
 
 import type {
   AgentCapabilities,
+  AuthMethod,
   ClientSideConnection,
   McpServer,
   PermissionOption,
@@ -38,6 +39,7 @@ export interface AgentHandle {
   reason?: AgentExitReason
   exit: { code?: number; signal?: string } | undefined
   capabilities: AgentCapabilities | undefined
+  authMethods: AuthMethod[] | undefined
   restartCount: number
   proc: ChildProcess | undefined
   conn: ClientSideConnection | undefined
