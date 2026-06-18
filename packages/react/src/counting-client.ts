@@ -120,6 +120,7 @@ export function createCountingClient(
       async attach() {
         throw new Error('attach is not supported by the counting client')
       },
+      async dispose() {},
     },
     sessions: {
       get: (id) => (id === sessionId ? session : undefined),

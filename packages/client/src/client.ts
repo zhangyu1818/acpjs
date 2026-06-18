@@ -107,6 +107,8 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
   function onHostEvent(event: AcpEvent): void {
     if (event.type === 'agent-updated') {
       registerAgent(event.payload)
+    } else if (event.type === 'agent-removed') {
+      removeAgent(event.payload.agentId)
     } else if (event.type === 'session-updated') {
       applySessionProjection(event.payload)
     } else if (event.type === 'permission-updated') {
@@ -207,6 +209,12 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
     return agent
   }
 
+  function removeAgent(agentId: string): void {
+    if (!agents.delete(agentId)) return
+    agentUpdaters.delete(agentId)
+    publishAgents()
+  }
+
   return Object.freeze({
     agents: Object.freeze({
       async spawn(definition: AgentDefinition): Promise<AcpAgent> {
@@ -235,6 +243,9 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
           })
         }
         return agents.get(agentId) ?? registerAgent(snapshot)
+      },
+      async dispose(agentId: string): Promise<void> {
+        await call(ACPJS_HOST_RPC_METHODS.disposeAgent, { agentId })
       },
     }),
     sessions: Object.freeze({

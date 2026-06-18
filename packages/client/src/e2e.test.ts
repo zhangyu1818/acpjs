@@ -410,3 +410,26 @@ test('close marks the session closed and later operations reject with acpjs/sess
   const error = await rejectionOf(session.prompt([{ type: 'text', text: 'x' }]))
   expect(error).toMatchObject({ code: 'acpjs/session-closed' })
 })
+
+test('dispose drops the agent from the client map via the agent-removed projection', async () => {
+  const { client, connectClient, definition } = await e2eClient({
+    session: { sessionId: 'sess-dispose' },
+  })
+  const agent = await client.agents.spawn(definition)
+  const other = connectClient()
+
+  await waitFor(() => other.agents.get(agent.agentId) !== undefined)
+
+  await client.agents.dispose(agent.agentId)
+
+  await waitFor(() => client.agents.get(agent.agentId) === undefined)
+  await waitFor(() => other.agents.get(agent.agentId) === undefined)
+
+  expect(client.agents.get(agent.agentId)).toBeUndefined()
+  expect(
+    client.agents.getSnapshot().map((snapshot) => snapshot.agentId),
+  ).not.toContain(agent.agentId)
+  expect(
+    other.agents.getSnapshot().map((snapshot) => snapshot.agentId),
+  ).not.toContain(agent.agentId)
+})

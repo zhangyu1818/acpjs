@@ -43,6 +43,7 @@ test('facade objects expose no raw RPC, raw notification or selector escape hatc
   ])
   expect(Object.keys(client.agents).sort()).toEqual([
     'attach',
+    'dispose',
     'get',
     'getSnapshot',
     'list',

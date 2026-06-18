@@ -64,7 +64,8 @@ caller; acpjs does not model login state.
 `createAcpHost(options?)` returns an `AcpHost`. The `AcpHost` class is also
 exported directly.
 
-- Agents: `spawnAgent(definition)`, `getAgent(agentId)`, `getAgents()`
+- Agents: `spawnAgent(definition)`, `getAgent(agentId)`, `getAgents()`,
+  `disposeAgent(agentId)`
 - Sessions: `createSession(agentId, { cwd, mcpServers, additionalDirectories })`,
   `prompt(sessionId, ContentBlock[])`, `cancel(sessionId)`,
   `closeSession(sessionId)`, `listSessions(agentId, { cursor?, cwd? })`,
@@ -81,6 +82,12 @@ exported directly.
   protocol `RequestPermissionOutcome`.
 - Persistence: `restoreSessions()` rebuilds `disconnected` sessions from storage
   after a host restart and returns their snapshots.
+- `disposeAgent(agentId)`: gracefully tear down a single agent — the per-agent
+  counterpart of `dispose()`. Idempotent (a no-op for an unknown or already-gone
+  id). The agent's sessions transition to `disconnected` (chat history is
+  preserved, **not** closed or deleted), the agent is then removed from
+  `getAgents()`, and an `agent-removed` host event (payload `{ agentId }`) is
+  emitted.
 - `dispose()`.
 
 Configuration pipeline (exported for inspection/pre-validation):
@@ -109,7 +116,7 @@ namespace in `@acpjs/protocol` (`acpjs/config-invalid`,
 
 Envelope adapter: `createHostEndpoint(host)` returns an `EnvelopeEndpoint`
 (Transport contract shape). RPC method names come from `ACPJS_HOST_RPC_METHODS` in
-`@acpjs/protocol` (`agents/spawn|list`,
+`@acpjs/protocol` (`agents/spawn|list|dispose`,
 `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`)
 and map to the same-named host methods. Missing required parameters are
 rejected at the envelope boundary with `acpjs/config-invalid`. Event
@@ -155,6 +162,8 @@ authenticate flow; this is the data integrators read to drive out-of-band login.
 The host stream (subscribed with `subscribe(undefined, fromSeq, cb)`) carries:
 
 - `agent-updated` — full `AgentSnapshotWire` projection.
+- `agent-removed` — payload `{ agentId }`; emitted when `disposeAgent` tears down
+  an agent and removes it from `getAgents()`.
 - `session-updated` — full `SessionSnapshotWire` projection.
 - `permission-updated` — host-level permission pending/answered/superseded
   projection.
@@ -222,6 +231,15 @@ reduction. The `agent/spawn` diagnostic records only env key names, never values
 - **dispose semantics**: all agents are marked `disposed` (terminal reason
   `disposed`), their sessions broadcast `disconnected`, and pending permissions
   are `superseded`.
+- **disposeAgent semantics**: `disposeAgent(agentId)` is the per-agent
+  counterpart of `dispose()` — it gracefully tears down exactly one agent. It is
+  idempotent: an unknown or already-gone id is a no-op. The agent's sessions
+  broadcast `disconnected` (history preserved, not closed/deleted) and pending
+  permissions are `superseded`; the agent is then removed from `getAgents()` and
+  an `agent-removed` host event (payload `{ agentId }`) is emitted on the host
+  stream. This is distinct from an involuntary `exited` tombstone, which stays in
+  `getAgents()` carrying its exit reason and may restart under the restart
+  policy — see docs/design-philosophy.md "Agent lifecycle".
 - **clientInfo**: `{ name: '@acpjs/core', version: '0.0.0' }` (version updated by
   the release pipeline).
 - **subscription shape**: `subscribe(sessionId?, fromSeq, callback)`; replay

@@ -219,6 +219,11 @@ export interface AgentUpdatedEvent extends HostEventBase {
   payload: AgentSnapshotWire
 }
 
+export interface AgentRemovedEvent extends HostEventBase {
+  type: 'agent-removed'
+  payload: { agentId: string }
+}
+
 export interface InstallProgressEvent extends HostEventBase {
   type: 'install-progress'
   payload: InstallProgressPayload
@@ -272,6 +277,7 @@ export type AcpSessionEvent =
 
 export type AcpHostProjectionEvent =
   | AgentUpdatedEvent
+  | AgentRemovedEvent
   | SessionUpdatedEvent
   | PermissionUpdatedEvent
 

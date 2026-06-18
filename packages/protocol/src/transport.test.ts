@@ -37,6 +37,7 @@ test('rpc method names form the single wire contract shared by core and client',
     getAllSessions: 'sessions/getAll',
     restoreSessions: 'sessions/restore',
     listAgents: 'agents/list',
+    disposeAgent: 'agents/dispose',
   })
   expect(Object.isFrozen(ACPJS_HOST_RPC_METHODS)).toBe(true)
 })

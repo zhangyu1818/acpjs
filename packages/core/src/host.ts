@@ -137,6 +137,17 @@ export class AcpHost {
     return Array.from(this.#runtime.agents.values(), agentSnapshot)
   }
 
+  async disposeAgent(agentId: string): Promise<void> {
+    const handle = this.#runtime.agents.get(agentId)
+    if (!handle) return
+    await this.#runtime.dispose(handle)
+    this.#runtime.agents.delete(agentId)
+    this.#bus.emitHost(
+      { agentId, type: 'agent-removed', payload: { agentId } },
+      false,
+    )
+  }
+
   getSession(sessionId: string): SessionSnapshotWire | undefined {
     const session = this.#sessions.sessions.get(sessionId)
     return session ? sessionSnapshot(session) : undefined

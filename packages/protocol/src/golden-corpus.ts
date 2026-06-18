@@ -224,4 +224,5 @@ export const goldenCorpus: AcpEvent[] = [
     toolCall: { toolCallId: 'call-2' },
     options: [{ kind: 'allow_once', name: 'Allow', optionId: 'allow' }],
   }),
+  host(7, 'agent-removed', { agentId: goldenAgentId }),
 ]

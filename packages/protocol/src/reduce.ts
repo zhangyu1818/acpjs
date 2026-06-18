@@ -244,6 +244,7 @@ export function reduce(state: SessionState, event: AcpEvent): SessionState {
     case 'unrecognized-update':
     case 'diagnostic':
     case 'agent-updated':
+    case 'agent-removed':
     case 'install-progress':
     case 'session-updated':
     case 'permission-updated': {

@@ -215,3 +215,62 @@ From there your renderer composes the merged status however it likes, e.g. show 
 the request's `options` as the buttons. The decision — what to show, and whether/how to auto-answer —
 stays yours; respond through the pending request as in the
 [auto-approving permissions recipe](../README.md#auto-approving-permissions-in-your-app).
+
+## 5. Read a session's config options / modes (core layer)
+
+A session's config options and modes are **reduced session state** owned by the reducer — they live on
+`SessionState.configOptions` and `SessionState.modes`, folded from the `session-config-init` event (the
+initial values, captured from the new/load response), then kept current by `current-mode-update` and
+`config-options-update`. That is exactly **why there is no synchronous `host.getConfigOptions()` getter**:
+config options / modes are derived state like `plan`, `messages`, and `toolCalls`, so you read them off a
+reduced `SessionState`, not off the host. At the `@acpjs/core` layer you fold the events yourself.
+
+Two things trip integrators up, and both are avoidable:
+
+- `reduce` / `createInitialSessionState` are re-exported from **`@acpjs/protocol`**, not `@acpjs/core`.
+  `@acpjs/core` depends on `@acpjs/protocol` but does not itself re-export the reducer, so import it from
+  the protocol package directly.
+- You **must `spawnAgent` first.** Calling `createSession` before the agent is ready rejects with
+  `agent is not ready`.
+
+```ts
+import { createAcpHost } from '@acpjs/core'
+import { createInitialSessionState, reduce } from '@acpjs/protocol'
+
+const agent = await host.spawnAgent({
+  id: 'my-agent',
+  command: 'npx',
+  args: ['some-acp-agent'],
+})
+
+const { sessionId } = await host.createSession(agent.agentId, {
+  cwd: process.cwd(),
+  mcpServers: [],
+  additionalDirectories: [],
+})
+
+let state = createInitialSessionState(sessionId)
+const unsub = host.subscribe(sessionId, 0, (event) => {
+  state = reduce(state, event)
+})
+
+// state.configOptions / state.modes are ALREADY populated here.
+console.log(state.configOptions, state.modes)
+```
+
+The key is `fromSeq: 0`. `subscribe(sessionId, 0, …)` **synchronously replays** the already-logged
+current-epoch events — including the `session-config-init` event — before `subscribe()` returns, so by the
+time the call resolves your `state.configOptions` / `state.modes` are filled in. There is **no timeout and
+no hand-rolled wait loop**: a racy `while`-poll waiting for the values to "arrive" (with no timeout) is the
+classic mistake that hangs forever, because the values were never going to arrive later — they were there
+synchronously on subscribe. Read `state` right after `subscribe()` returns, then keep folding live updates
+in the callback.
+
+Like every reduced field, config options / modes **reset on `session-reset`** (a `session/load` opens a
+fresh epoch led by `session-reset { reason: 'load' }`, then re-replays a new `session-config-init`). Since
+you fold through the same `reduce()`, this is handled for you: the reset clears the prior epoch's values and
+the post-load `session-config-init` repopulates them — no extra bookkeeping required.
+
+`@acpjs/client` consumers get this for free: `SessionState.configOptions` / `SessionState.modes` are on
+`session.getSnapshot()`, and `session.onEvent(listener, { fromSeq: 0 })` exposes the same replayed
+`session-config-init` event if you want the raw stream.

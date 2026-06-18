@@ -85,7 +85,7 @@ At the core layer the same pattern uses a host subscription plus `host.respondPe
 
 ### Recipes
 
-The integrator-owned patterns — plan history, per-turn grouping, discriminating auth (and other agent) errors by structured code, and joining a pending permission to its tool call — are written up as a few lines of integrator-side TypeScript over the public surface in [docs/recipes.md](./docs/recipes.md). They are documented conveniences, not code baked into the toolkit.
+The integrator-owned patterns — plan history, per-turn grouping, discriminating auth (and other agent) errors by structured code, joining a pending permission to its tool call, and [reading a session's config options / modes at the core layer](./docs/recipes.md#5-read-a-sessions-config-options--modes-core-layer) — are written up as a few lines of integrator-side TypeScript over the public surface in [docs/recipes.md](./docs/recipes.md). They are documented conveniences, not code baked into the toolkit.
 
 ## Getting started
 

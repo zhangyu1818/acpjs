@@ -27,6 +27,7 @@ const coveredEventTypes = {
   'terminal-output': true,
   'unrecognized-update': true,
   'agent-updated': true,
+  'agent-removed': true,
   'install-progress': true,
   diagnostic: true,
   'session-updated': true,

@@ -18,6 +18,7 @@ export const ACPJS_HOST_RPC_METHODS = Object.freeze({
   getAllSessions: 'sessions/getAll',
   restoreSessions: 'sessions/restore',
   listAgents: 'agents/list',
+  disposeAgent: 'agents/dispose',
 } as const)
 
 export type AcpRpcMethod =

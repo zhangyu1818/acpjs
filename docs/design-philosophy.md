@@ -75,12 +75,33 @@ semantics are guaranteed surface, not internal detail.
   as a resume token across loads; pair it with the load boundary if you need stable identity.
 - **Non-breaking (minor).** Adding a new variant to the union, or adding a new optional field to an
   existing payload. Consumers already tolerating `unrecognized-update` and unknown fields absorb
-  these without change.
+  these without change. The new `agent-removed` host event variant (emitted by `disposeAgent`) is
+  exactly this kind of addition — a minor, additive change, since consumers already tolerate
+  unknown/new variants.
 - **Breaking (major).** Renaming/removing a variant, changing or removing a payload field (or
   narrowing its type), or changing ordering / `seq` semantics.
 - **UNSTABLE stays unmodeled.** Protocol bits still UNSTABLE in ACP (e.g. incremental `plan_update` /
   `plan_removed`) are not given typed variants until they stabilize; until then they arrive as
   `unrecognized-update`. Consistent with the non-goals above — the toolkit grows only with the
   stable protocol.
+
+### Agent lifecycle: removal vs. tombstone
+
+acpjs distinguishes a **voluntary teardown** from an **involuntary exit**, and expresses the distinction
+purely through which host event fires — there is no flag to interpret:
+
+- **Explicit `disposeAgent(agentId)` REMOVES the agent.** It gracefully tears down one agent (the
+  per-agent counterpart of `host.dispose()`), then emits `agent-removed` and drops the agent from
+  `getAgents()`. It is idempotent: a no-op for an unknown or already-gone id. The agent's sessions
+  transition to `disconnected` — their chat history is **preserved, not closed or deleted** — so the
+  data survives even though hot recovery is lost; cold-recover by spawning the agent again and calling
+  `loadSession`.
+- **Involuntary crash / exit keeps the agent as an `exited` tombstone.** The agent stays in
+  `getAgents()` carrying its exit reason and may restart under the restart policy; it is not removed and
+  no `agent-removed` fires. The tombstone is how callers see why an agent went away and whether it can
+  come back.
+
+So `agent-removed` means "the integrator chose to remove this agent"; an `exited` status means "the agent
+went away on its own." Surfacing both states is mechanism; deciding when to dispose is the integrator's.
 
 See the [root README](../README.md) for the architecture diagram, packages, and usage.

@@ -227,6 +227,10 @@ export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
       case ACPJS_HOST_RPC_METHODS.listAgents: {
         return host.getAgents()
       }
+      case ACPJS_HOST_RPC_METHODS.disposeAgent: {
+        await host.disposeAgent(requireParam(agentId, 'agentId'))
+        return null
+      }
       default: {
         throw new AcpError(
           ACP_ERROR_CODES.configInvalid,

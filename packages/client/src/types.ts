@@ -97,6 +97,7 @@ export interface AcpClient {
     subscribe: (listener: ChangeListener) => () => void
     list: () => Promise<readonly AgentSnapshotWire[]>
     attach: (agentId: string) => Promise<AcpAgent>
+    dispose: (agentId: string) => Promise<void>
   }
   readonly sessions: {
     get: (sessionId: string) => AcpSession | undefined

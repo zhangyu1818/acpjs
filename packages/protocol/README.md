@@ -68,7 +68,7 @@ reference unchanged for events it does not reduce).
 ### Event model
 
 - `AcpEvent` — the closed discriminated union of every event, equal to
-  `AcpSessionEvent | AcpHostEvent` (19 session events + 5 host events).
+  `AcpSessionEvent | AcpHostEvent` (19 session events + 6 host events).
 - Member interfaces, e.g. `UserMessageChunkEvent`, `AgentMessageChunkEvent`,
   `AgentThoughtChunkEvent`, `ToolCallEvent`, `ToolCallUpdateEvent`, `PlanEvent`,
   `AvailableCommandsUpdateEvent`, `CurrentModeUpdateEvent`,
@@ -76,8 +76,9 @@ reference unchanged for events it does not reduce).
   `UsageUpdateEvent`, `PromptFinishedEvent`, `SessionStatusChangeEvent`,
   `SessionResetEvent`, `PermissionRequestCreatedEvent`,
   `PermissionRequestResolvedEvent`, `TerminalOutputEvent`,
-  `UnrecognizedUpdateEvent`, `AgentUpdatedEvent`, `SessionUpdatedEvent`,
-  `PermissionUpdatedEvent`, `InstallProgressEvent`, `DiagnosticEvent`.
+  `UnrecognizedUpdateEvent`, `AgentUpdatedEvent`, `AgentRemovedEvent`,
+  `SessionUpdatedEvent`, `PermissionUpdatedEvent`, `InstallProgressEvent`,
+  `DiagnosticEvent`.
 - Payload types: `SessionConfigInitPayload`, `PromptFinishedPayload`,
   `SessionStatusChangePayload`, `SessionResetPayload`,
   `PermissionRequestCreatedPayload`, `PermissionRequestResolvedPayload`,
@@ -141,9 +142,11 @@ transport obligation; a new connection backfills using `fromSeq`.
 Shared by `@acpjs/core` and `@acpjs/client` to avoid duplicated literals.
 
 - `ACPJS_HOST_RPC_METHODS` — frozen RPC method-name constants
-  (`agents/spawn|list`,
+  (`agents/spawn|list|dispose`,
   `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`),
-  pinned by tests, plus the `AcpRpcMethod` type.
+  pinned by tests, plus the `AcpRpcMethod` type. `agents/dispose` carries
+  `disposeAgent(agentId)` across the envelope (the cross-process counterpart of
+  the host method / `client.agents.dispose`).
 - Shared payload shapes: `AgentDefinition`, `SessionConfigValue`,
   `CreateOrLoadSessionParams`, `ResumeSessionParams`, `CreateSessionResult`,
   `AgentCapabilitiesWire`, `AgentSnapshotWire`, `SessionSnapshotWire`.
@@ -169,6 +172,11 @@ state projection subset:
 
 - `agent-updated` — top-level `agentId`; payload is the full
   `AgentSnapshotWire`.
+- `agent-removed` — `AgentRemovedEvent`, payload `{ agentId }`; emitted when
+  `disposeAgent` tears an agent down and removes it from the host registry
+  (distinct from an `exited` tombstone, which stays in the registry). Added as a
+  new union variant — a non-breaking addition, since consumers already tolerate
+  unknown/new variants.
 - `session-updated` — full `SessionSnapshotWire` session projection.
 - `permission-updated` — host-level permission pending/answered/superseded
   projection.
