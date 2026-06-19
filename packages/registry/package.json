@@ -1,6 +1,6 @@
 {
   "name": "@acpjs/registry",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "acpjs registry index fetch/cache, AgentDefinition resolution, and ensureInstalled.",
   "license": "MIT",
   "repository": {
