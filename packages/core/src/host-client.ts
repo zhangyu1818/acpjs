@@ -181,25 +181,46 @@ export function createAgentClient(
     typeof releaseTerminal === 'function' &&
     typeof terminal.cleanupSession === 'function'
   ) {
+    const terminalOwners = new Map<string, string>()
+    const requireTerminalOwner = (
+      sessionId: string,
+      terminalId: string,
+    ): void => {
+      const owner = terminalOwners.get(terminalId)
+      if (owner !== undefined && owner !== sessionId) {
+        throw RequestError.invalidParams(
+          { sessionId, terminalId },
+          'terminal belongs to another session',
+        )
+      }
+    }
     client.createTerminal = async (params) => {
       requireReverseSession(context, agentId, params.sessionId)
-      return createTerminal.call(terminal, params)
+      const response = await createTerminal.call(terminal, params)
+      terminalOwners.set(response.terminalId, params.sessionId)
+      return response
     }
     client.terminalOutput = async (params) => {
       requireReverseSession(context, agentId, params.sessionId)
+      requireTerminalOwner(params.sessionId, params.terminalId)
       return terminalOutput.call(terminal, params)
     }
     client.waitForTerminalExit = async (params) => {
       requireReverseSession(context, agentId, params.sessionId)
+      requireTerminalOwner(params.sessionId, params.terminalId)
       return waitForTerminalExit.call(terminal, params)
     }
     client.killTerminal = async (params) => {
       requireReverseSession(context, agentId, params.sessionId)
+      requireTerminalOwner(params.sessionId, params.terminalId)
       return killTerminal.call(terminal, params)
     }
     client.releaseTerminal = async (params) => {
       requireReverseSession(context, agentId, params.sessionId)
-      return releaseTerminal.call(terminal, params)
+      requireTerminalOwner(params.sessionId, params.terminalId)
+      const response = await releaseTerminal.call(terminal, params)
+      terminalOwners.delete(params.terminalId)
+      return response
     }
   }
   return client

@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { createAcpHost } from './index.ts'
 import {
   collectEvents,
+  diagnosticPayloads,
   fixtureDefinition,
   sessionParams,
   trackHost,
@@ -74,4 +75,23 @@ test('disposeAgent is idempotent: unknown and repeated ids are no-ops', async ()
   expect(events.filter((event) => event.type === 'agent-removed')).toHaveLength(
     1,
   )
+})
+
+test('disposeAgent is idempotent under concurrent calls', async () => {
+  const host = trackHost(createAcpHost())
+  const { definition } = await fixtureDefinition({})
+  const agent = await host.spawnAgent(definition)
+
+  const events = collectEvents(host, undefined, 0)
+
+  await Promise.all([
+    host.disposeAgent(agent.agentId),
+    host.disposeAgent(agent.agentId),
+  ])
+
+  expect(events.filter((event) => event.type === 'agent-removed')).toHaveLength(
+    1,
+  )
+  expect(diagnosticPayloads(events, 'agent/exit')).toHaveLength(1)
+  expect(host.getAgent(agent.agentId)).toBeUndefined()
 })

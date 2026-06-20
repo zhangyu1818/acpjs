@@ -154,8 +154,13 @@ Shared by `@acpjs/core` and `@acpjs/client` to avoid duplicated literals.
 ### SDK protocol re-exports
 
 Type-only, for contract consumers: `AgentCapabilities`, `AuthMethod`,
-`ContentBlock`, `ListSessionsResponse`, `McpServer`,
-`RequestPermissionOutcome`, `SessionConfigOption`.
+`AvailableCommand`, `ContentBlock`, `Cost`, `ListSessionsResponse`, `McpServer`,
+`PermissionOption`, `Plan`, `RequestPermissionOutcome`, `SessionConfigOption`,
+`SessionModeState`, `StopReason`, `ToolCallContent`, `ToolCallLocation`,
+`ToolCallStatus`, `ToolKind`, `Usage`. These cover every SDK-typed field that
+`SessionState` / `ToolCallState` expose, so integrators can type a reduced
+state entirely from `@acpjs/protocol` without reaching into
+`@agentclientprotocol/sdk` or hand-rolling parallel enums.
 
 ## Event types (closed union)
 

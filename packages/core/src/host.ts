@@ -140,8 +140,8 @@ export class AcpHost {
   async disposeAgent(agentId: string): Promise<void> {
     const handle = this.#runtime.agents.get(agentId)
     if (!handle) return
-    await this.#runtime.dispose(handle)
     this.#runtime.agents.delete(agentId)
+    await this.#runtime.dispose(handle)
     this.#bus.emitHost(
       { agentId, type: 'agent-removed', payload: { agentId } },
       false,

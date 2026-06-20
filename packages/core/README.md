@@ -284,6 +284,14 @@ reduction. The `agent/spawn` diagnostic records only env key names, never values
   `cleanupSession` before `terminal: true` is declared to the agent. close/delete
   call `cleanupSession(sessionId)`. The exported `createDefaultTerminalHandler`
   can be injected by applications that want Node child-process terminals.
+- **terminal↔session ownership**: the host records which `sessionId` created
+  each `terminalId` (from the `createTerminal` response) and rejects any
+  `terminalOutput` / `waitForTerminalExit` / `killTerminal` / `releaseTerminal`
+  that references a terminal owned by a different session with
+  `acpjs/invalid-params`. This boundary is enforced before the handler runs, so
+  a custom `TerminalHandler` cannot accidentally leak terminals across the
+  agent's sessions — the same trust-boundary guarantee the host already applies
+  to session↔agent ownership.
 - **SessionMeta persistence**: after successful `createSession` or
   `resumeSession`, `storage.appendMeta` writes protocol config metadata
   (`sessionId`, `agentDefinitionId?`, `cwd`, `mcpServers?`,
