@@ -1,5 +1,14 @@
 # @acpjs/react
 
+## 0.2.4
+
+### Patch Changes
+
+- Updated dependencies [b6a0f0b]
+- Updated dependencies [7ce1084]
+  - @acpjs/protocol@0.5.0
+  - @acpjs/client@0.4.1
+
 ## 0.2.3
 
 ### Patch Changes

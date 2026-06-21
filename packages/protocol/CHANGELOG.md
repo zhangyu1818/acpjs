@@ -1,5 +1,21 @@
 # @acpjs/protocol
 
+## 0.5.0
+
+### Minor Changes
+
+- b6a0f0b: Reopen a `closed` session via `session/load`, coalesce streamed text, and drop the client handle on close so a reopen yields a fresh handle.
+
+  - **protocol** — `reduce` now coalesces consecutive **plain text** blocks within a message into one (`text` concatenated, no separator), so a streamed reply is a single text block instead of one block per delta. "Plain" means the block carries no `annotations` and no `_meta`; if either side carries those fields the blocks are kept separate (and a non-text block always breaks the run) to preserve per-block metadata.
+  - **core** — `loadSession` can now **reopen** a `closed` session: it clears the closed tombstone, re-loads the session from the agent, and rebuilds state via replay. A `deleted` session stays permanently rejected (`acpjs/session-closed`).
+  - **client** — `applySessionProjection` now drops the session handle for `closed` (previously only `deleted`), so `client.sessions.get(sessionId)` returns `undefined` once a session is closed and a later reopen (load / attach) builds a **new** handle rather than reviving the old one.
+
+- 7ce1084: Surface the full reduced-state type vocabulary and enforce terminal↔session ownership at the host boundary.
+
+  - **protocol** — re-export the remaining SDK protocol types that `SessionState` / `ToolCallState` already expose: `AvailableCommand`, `Cost`, `PermissionOption`, `Plan`, `SessionModeState`, `StopReason`, `ToolCallContent`, `ToolCallLocation`, `ToolCallStatus`, `ToolKind`, `Usage` (joining the existing `ContentBlock` / `SessionConfigOption` / `AuthMethod` / `McpServer` / etc.). Integrators can now type a reduced session entirely from `@acpjs/protocol` instead of reaching into `@agentclientprotocol/sdk` or maintaining parallel enum copies that drift from the protocol. Additive, non-breaking.
+  - **core** — the host now records which `sessionId` created each `terminalId` and rejects `terminalOutput` / `waitForTerminalExit` / `killTerminal` / `releaseTerminal` calls that reference a terminal owned by a different session (`acpjs/invalid-params`, "terminal belongs to another session"). The check runs before the injected `TerminalHandler`, so a custom handler can no longer accidentally drop this isolation — the same trust-boundary guarantee already applied to session↔agent ownership. Cross-session terminal access was never valid, so this is a hardening fix.
+  - **core** — `disposeAgent` is now idempotent under concurrent calls, not just sequential ones. The agent is removed from the runtime registry synchronously before awaiting the process teardown, so two overlapping `disposeAgent(sameId)` calls no longer both pass the existence guard — `dispose` runs once and `agent-removed` is emitted at most once. No public API or type change.
+
 ## 0.4.0
 
 ### Minor Changes
