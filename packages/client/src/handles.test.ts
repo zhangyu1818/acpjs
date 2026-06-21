@@ -372,6 +372,64 @@ test('session-updated projections add and remove session handles', async () => {
   expect(client.sessions.getSnapshot()).toEqual(before)
 })
 
+test('a closed session drops its handle and reopening yields a fresh, usable handle', async () => {
+  const { hub, client } = setup()
+  await client.agents.spawn({ id: 'a', command: 'node' })
+
+  hub.emitHost({
+    type: 'session-updated',
+    payload: {
+      sessionId: 'sess-resume',
+      status: 'active',
+      cwd: '/tmp',
+      additionalDirectories: [],
+    },
+  })
+  const original = client.sessions.get('sess-resume')
+  expect(original?.sessionId).toBe('sess-resume')
+
+  hub.emitHost({
+    type: 'session-updated',
+    payload: {
+      sessionId: 'sess-resume',
+      status: 'closed',
+      cwd: '/tmp',
+      additionalDirectories: [],
+    },
+  })
+  expect(client.sessions.get('sess-resume')).toBeUndefined()
+
+  hub.emitHost({
+    type: 'session-updated',
+    payload: {
+      sessionId: 'sess-resume',
+      status: 'active',
+      cwd: '/tmp',
+      additionalDirectories: [],
+    },
+  })
+  const reopened = client.sessions.get('sess-resume')
+  expect(reopened?.sessionId).toBe('sess-resume')
+  expect(reopened).not.toBe(original)
+
+  const received: unknown[] = []
+  reopened?.onEvent((event) => {
+    received.push(event)
+  })
+  hub.emit('sess-resume', 'agent-message-chunk', {
+    content: { type: 'text', text: 'fresh handle works' },
+  })
+  expect(received).toHaveLength(1)
+  expect(reopened?.getSnapshot().messages).toEqual([
+    {
+      kind: 'agent',
+      messageId: null,
+      content: [{ type: 'text', text: 'fresh handle works' }],
+      seq: 1,
+    },
+  ])
+})
+
 test('session subscription errors remove the local session handle', async () => {
   const { hub, client } = setup()
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })

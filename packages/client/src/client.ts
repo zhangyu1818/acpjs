@@ -154,7 +154,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
   function applySessionProjection(
     snapshot: SessionSnapshotWire,
   ): AcpSession | undefined {
-    if (snapshot.status === 'deleted') {
+    if (snapshot.status === 'deleted' || snapshot.status === 'closed') {
       closeSessionHandle(snapshot.sessionId)
       return undefined
     }

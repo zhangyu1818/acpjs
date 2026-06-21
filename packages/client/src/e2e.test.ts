@@ -100,10 +100,7 @@ test('spawn, create, subscribe and prompt over the real in-process chain builds 
     {
       kind: 'agent',
       messageId: null,
-      content: [
-        { type: 'text', text: 'Hel' },
-        { type: 'text', text: 'lo' },
-      ],
+      content: [{ type: 'text', text: 'Hello' }],
       seq: 4,
     },
     {

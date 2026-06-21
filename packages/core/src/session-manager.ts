@@ -146,6 +146,20 @@ export class SessionManager {
     )
   }
 
+  assertNotDeleted(sessionId: string): void {
+    if (this.tombstones.get(sessionId) !== 'deleted') return
+    throw new AcpError(
+      ACP_ERROR_CODES.sessionClosed,
+      `session ${sessionId} is deleted`,
+    )
+  }
+
+  reopenClosedSession(sessionId: string): void {
+    if (this.tombstones.get(sessionId) !== 'closed') return
+    this.tombstones.delete(sessionId)
+    this.sessions.delete(sessionId)
+  }
+
   disconnectForAgent(agentId: string): void {
     for (const session of this.sessions.values()) {
       if (

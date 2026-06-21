@@ -6,9 +6,35 @@ import {
 } from './state'
 import { truncateUtf8Tail } from './terminal-output'
 
-import type { ContentChunk, ToolCallUpdate } from '@agentclientprotocol/sdk'
+import type {
+  ContentBlock,
+  ContentChunk,
+  ToolCallUpdate,
+} from '@agentclientprotocol/sdk'
 
 import type { AcpEvent } from './events'
+
+function isPlainText(
+  block: ContentBlock,
+): block is ContentBlock & { type: 'text' } {
+  return (
+    block.type === 'text' && block.annotations == null && block._meta == null
+  )
+}
+
+function appendContent(
+  content: ContentBlock[],
+  incoming: ContentBlock,
+): ContentBlock[] {
+  const last = content[content.length - 1]
+  if (last && isPlainText(last) && isPlainText(incoming)) {
+    return [
+      ...content.slice(0, -1),
+      { type: 'text', text: last.text + incoming.text },
+    ]
+  }
+  return [...content, incoming]
+}
 
 function appendChunk(
   state: SessionState,
@@ -46,7 +72,10 @@ function appendChunk(
     ...state,
     messages: messages.map((message, index) =>
       index === target
-        ? { ...message, content: [...message.content, payload.content] }
+        ? {
+            ...message,
+            content: appendContent(message.content, payload.content),
+          }
         : message,
     ),
   }

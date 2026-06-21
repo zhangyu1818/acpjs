@@ -101,8 +101,7 @@ test('onEvent opens an independent subscription that does not perturb subscribe(
   expect(states).toHaveLength(2)
   expect(session.getSnapshot()).not.toBe(stateAfterFirst)
   expect(session.getSnapshot().messages.at(0)?.content).toEqual([
-    { type: 'text', text: 'one' },
-    { type: 'text', text: 'two' },
+    { type: 'text', text: 'onetwo' },
   ])
 })
 

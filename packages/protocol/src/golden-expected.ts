@@ -56,10 +56,7 @@ export const goldenExpectedState: SessionState = {
     {
       kind: 'agent',
       messageId: 'm1',
-      content: [
-        { type: 'text', text: 'Hello' },
-        { type: 'text', text: ' world' },
-      ],
+      content: [{ type: 'text', text: 'Hello world' }],
       seq: 6,
     },
   ],

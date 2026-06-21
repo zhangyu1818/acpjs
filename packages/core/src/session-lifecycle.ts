@@ -91,9 +91,10 @@ export async function loadManagedSession(
   rawParams: CreateOrLoadSessionParams,
 ): Promise<void> {
   const params = normalizeCreateOrLoadSessionParams(rawParams)
-  manager.assertNotTombstoned(sessionId)
+  manager.assertNotDeleted(sessionId)
   const { handle, conn } = manager.runtime.requireReady(agentId)
   requireCapability(handle.capabilities?.loadSession === true, 'session/load')
+  manager.reopenClosedSession(sessionId)
   const extra = additionalDirectoryParams(handle, params.additionalDirectories)
   let session = manager.sessions.get(sessionId)
   const isNewSession = session === undefined

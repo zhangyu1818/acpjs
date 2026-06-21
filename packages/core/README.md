@@ -71,7 +71,9 @@ exported directly.
   `closeSession(sessionId)`, `listSessions(agentId, { cursor?, cwd? })`,
   `resumeSession(agentId, sessionId, { cwd, mcpServers?, additionalDirectories })`,
   `deleteSession(agentId, sessionId)`,
-  `loadSession(agentId, sessionId, { cwd, mcpServers, additionalDirectories })`,
+  `loadSession(agentId, sessionId, { cwd, mcpServers, additionalDirectories })`
+  (also **reopens** a `closed` session — it re-loads it from the agent and
+  replays history; a `deleted` session stays permanently rejected),
   `setMode(sessionId, modeId)`,
   `setConfigOption(sessionId, configId, value)`, `getSession(sessionId)`,
   `getSessions()`

@@ -54,10 +54,7 @@ test('sessions.create subscribes the session event stream and reduces it into Se
     {
       kind: 'agent',
       messageId: 'm1',
-      content: [
-        { type: 'text', text: 'Hel' },
-        { type: 'text', text: 'lo' },
-      ],
+      content: [{ type: 'text', text: 'Hello' }],
       seq: 2,
     },
   ])

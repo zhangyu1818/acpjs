@@ -18,7 +18,7 @@ test('chunks sharing a messageId keep the seq of their first appearance', () => 
     {
       kind: 'agent',
       messageId: 'm1',
-      content: [text('Hel'), text('lo')],
+      content: [text('Hello')],
       seq: 3,
     },
   ])

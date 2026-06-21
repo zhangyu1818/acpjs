@@ -54,7 +54,7 @@ for (const event of events) state = reduce(state, event)
 //   {
 //     kind: 'agent',
 //     messageId: 'm1',
-//     content: [{ type: 'text', text: 'Hel' }, { type: 'text', text: 'lo' }],
+//     content: [{ type: 'text', text: 'Hello' }],
 //     seq: 1,
 //   },
 // ]
@@ -207,7 +207,12 @@ state projection subset:
   tail for a message matching `(kind, messageId)` (same id is merged even across
   intervening messages). When `messageId` is absent, a chunk merges only with the
   immediately preceding message if it shares the same `kind` and also has no
-  `messageId`.
+  `messageId`. Within a message, consecutive **plain text** blocks are coalesced
+  into one (`text` concatenated, no separator) so a streamed reply is a single
+  text block instead of one block per token. "Plain" means the text block carries
+  no `annotations` and no `_meta`; if either side carries those fields the blocks
+  are kept separate to avoid losing per-block metadata, and non-text blocks (e.g.
+  an image between two texts) always break a run.
 - `tool-call-update`: `null` and absent keys are both treated as "no change"
   (core normalizes `null` away; the reducer handles it defensively).
   `content`/`locations` are replaced wholesale. Updates to an unknown
