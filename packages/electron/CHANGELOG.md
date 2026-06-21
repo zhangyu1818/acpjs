@@ -1,5 +1,14 @@
 # @acpjs/electron
 
+## 0.1.5
+
+### Patch Changes
+
+- Updated dependencies [b6a0f0b]
+- Updated dependencies [7ce1084]
+  - @acpjs/protocol@0.5.0
+  - @acpjs/core@0.5.0
+
 ## 0.1.4
 
 ### Patch Changes
