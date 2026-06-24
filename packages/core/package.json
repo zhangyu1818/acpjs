@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@acpjs/protocol": "workspace:*",
-    "@agentclientprotocol/sdk": "^0.25.0",
+    "@agentclientprotocol/sdk": "^0.29.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

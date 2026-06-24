@@ -32,6 +32,7 @@ function finishPrompt(
   payload: PromptFinishedPayload,
 ): PromptFinishedPayload {
   delete session.clientPromptEchoes
+  delete session.promptCancellationRequested
   if (canCommitPrompt(manager, session)) {
     manager.bus.emitSession(session, 'prompt-finished', payload)
     manager.bus.setSessionStatus(session, 'active')
@@ -83,6 +84,7 @@ export async function promptManagedSession(
     )
   }
   const { handle, conn } = manager.runtime.requireReady(session.agentId)
+  delete session.promptCancellationRequested
   manager.bus.setSessionStatus(session, 'prompting')
   emitClientPrompt(manager, session, prompt)
   let payload: PromptFinishedPayload
@@ -92,7 +94,9 @@ export async function promptManagedSession(
       conn.prompt({ sessionId, prompt }),
     )
     payload = {
-      stopReason: response.stopReason,
+      stopReason: session.promptCancellationRequested
+        ? 'cancelled'
+        : response.stopReason,
       ...(response.usage == null ? {} : { usage: response.usage }),
     }
   } catch (error) {
@@ -122,8 +126,14 @@ export async function cancelManagedSession(
     )
   }
   const { handle, conn } = manager.runtime.requireReady(session.agentId)
-  manager.router.supersedeForSession(sessionId)
-  await manager.runtime.track(handle, conn.cancel({ sessionId }))
+  if (session.status === 'prompting') {
+    session.promptCancellationRequested = true
+  }
+  try {
+    await manager.runtime.track(handle, conn.cancel({ sessionId }))
+  } finally {
+    manager.router.supersedeForSession(sessionId)
+  }
 }
 
 export async function setManagedSessionMode(

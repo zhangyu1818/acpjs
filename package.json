@@ -25,7 +25,7 @@
     "clean": "turbo clean && rm -rf node_modules/.cache .turbo .tsbuildinfo dist coverage"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "^0.25.0",
+    "@agentclientprotocol/sdk": "^0.29.0",
     "@arethetypeswrong/cli": "^0.18.3",
     "@changesets/cli": "^2.31.0",
     "@types/node": "^25.9.2",

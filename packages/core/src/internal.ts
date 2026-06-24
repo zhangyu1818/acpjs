@@ -71,6 +71,7 @@ export interface SessionHandle {
   hasModes: boolean
   hasConfigOptions: boolean
   clientPromptEchoes?: ClientPromptEcho[]
+  promptCancellationRequested?: boolean
   subscribers: Set<EventSubscriber>
 }
 

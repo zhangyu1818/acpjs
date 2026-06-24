@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^0.25.0
-        version: 0.25.0(zod@4.4.3)
+        specifier: ^0.29.0
+        version: 0.29.0(zod@4.4.3)
       '@arethetypeswrong/cli':
         specifier: ^0.18.3
         version: 0.18.3
@@ -76,8 +76,8 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       '@agentclientprotocol/sdk':
-        specifier: ^0.25.0
-        version: 0.25.0(zod@4.4.3)
+        specifier: ^0.29.0
+        version: 0.29.0(zod@4.4.3)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -114,8 +114,8 @@ importers:
   packages/fixture-agent:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^0.25.0
-        version: 0.25.0(zod@4.4.3)
+        specifier: ^0.29.0
+        version: 0.29.0(zod@4.4.3)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -127,8 +127,8 @@ importers:
   packages/protocol:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^0.25.0
-        version: 0.25.0(zod@4.4.3)
+        specifier: ^0.29.0
+        version: 0.29.0(zod@4.4.3)
     devDependencies:
       jsdom:
         specifier: ^29.1.1
@@ -189,8 +189,8 @@ packages:
   '@acemir/cssom@0.9.31':
     resolution: {integrity: sha512-ZnR3GSaH+/vJ0YlHau21FjfLYjMpYVIzTD8M8vIEQvIGxeOXyXdzCI140rrCY862p/C/BbzWsjc1dgnM9mkoTA==}
 
-  '@agentclientprotocol/sdk@0.25.0':
-    resolution: {integrity: sha512-wU1VgXNtMvdVotX49txc3WJUDV+/QbLpsgjMvFhlRmp37osdLbI7L7y+iwAlQATwfjLxcv1r1p3ZxZBcXlGhcQ==}
+  '@agentclientprotocol/sdk@0.29.0':
+    resolution: {integrity: sha512-Sb8xJ/cIhqlvxeJiB0+1scBk0LAkVAwJ9WAFG9XCe3LEI5JWAyOxbqaCa8O1HmNnrk4+qHN11eaKH6zL2iHIYA==}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
@@ -2389,7 +2389,7 @@ snapshots:
 
   '@acemir/cssom@0.9.31': {}
 
-  '@agentclientprotocol/sdk@0.25.0(zod@4.4.3)':
+  '@agentclientprotocol/sdk@0.29.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 
