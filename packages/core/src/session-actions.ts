@@ -31,11 +31,31 @@ function finishPrompt(
   session: SessionHandle,
   payload: PromptFinishedPayload,
 ): PromptFinishedPayload {
+  delete session.clientPromptEchoes
   if (canCommitPrompt(manager, session)) {
     manager.bus.emitSession(session, 'prompt-finished', payload)
     manager.bus.setSessionStatus(session, 'active')
   }
   return structuredClone(payload)
+}
+
+function emitClientPrompt(
+  manager: SessionManager,
+  session: SessionHandle,
+  prompt: ContentBlock[],
+): void {
+  if (prompt.length === 0) return
+  const messageId = `acpjs-client-prompt-${session.nextSeq}`
+  const content = structuredClone(prompt)
+  session.clientPromptEchoes = [{ remaining: content }]
+  for (const block of content) {
+    manager.bus.emitSession(
+      session,
+      'user-message-chunk',
+      { content: block, messageId },
+      { acpjs: { source: 'client-prompt' } },
+    )
+  }
 }
 
 export async function promptManagedSession(
@@ -64,6 +84,7 @@ export async function promptManagedSession(
   }
   const { handle, conn } = manager.runtime.requireReady(session.agentId)
   manager.bus.setSessionStatus(session, 'prompting')
+  emitClientPrompt(manager, session, prompt)
   let payload: PromptFinishedPayload
   try {
     const response = await manager.runtime.track(

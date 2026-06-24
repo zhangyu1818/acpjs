@@ -99,7 +99,10 @@ export async function loadManagedSession(
   let session = manager.sessions.get(sessionId)
   const isNewSession = session === undefined
   requireLifecycleStart(sessionId, session?.status)
-  if (session !== undefined && !sameAgentOrUnknown(session, agentId)) {
+  if (
+    session !== undefined &&
+    !sameAgentOrUnknown(session, agentId, handle.definition.id)
+  ) {
     throw new AcpError(
       ACP_ERROR_CODES.configInvalid,
       `session ${sessionId} belongs to another agent`,
@@ -201,7 +204,10 @@ export async function resumeManagedSession(
   let session = manager.sessions.get(sessionId)
   const isNewSession = session === undefined
   requireLifecycleStart(sessionId, session?.status)
-  if (session !== undefined && !sameAgentOrUnknown(session, agentId)) {
+  if (
+    session !== undefined &&
+    !sameAgentOrUnknown(session, agentId, handle.definition.id)
+  ) {
     throw new AcpError(
       ACP_ERROR_CODES.configInvalid,
       `session ${sessionId} belongs to another agent`,

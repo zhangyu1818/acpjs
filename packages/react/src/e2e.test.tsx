@@ -91,7 +91,7 @@ test('end to end: fixture agent events arrive in the rendered hook output', asyn
       expect(result.stopReason).toBe('end_turn')
     })
 
-    expect(screen.getByTestId('e2e').textContent).toBe('hi from fixture')
+    expect(screen.getByTestId('e2e').textContent).toBe('go|hi from fixture')
   } finally {
     await client.dispose()
     await host.dispose()

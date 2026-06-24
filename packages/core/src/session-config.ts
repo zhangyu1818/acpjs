@@ -162,6 +162,12 @@ export function deletedSessionMeta(sessionId: string): SessionMeta {
 export function sameAgentOrUnknown(
   session: SessionHandle,
   agentId: string,
+  agentDefinitionId?: string,
 ): boolean {
-  return session.agentId === undefined || session.agentId === agentId
+  if (session.agentId === undefined || session.agentId === agentId) return true
+  return (
+    session.status === 'disconnected' &&
+    agentDefinitionId !== undefined &&
+    session.agentDefinitionId === agentDefinitionId
+  )
 }

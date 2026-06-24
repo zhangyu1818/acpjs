@@ -14,7 +14,7 @@
       "outputs": ["dist/**", ".tsbuildinfo"]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["build", "^build"]
     },
     "lint": {
       "cache": false

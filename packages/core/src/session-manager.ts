@@ -252,7 +252,7 @@ export class SessionManager {
     handle: AgentHandle,
     params: CreateOrLoadSessionParams | ResumeSessionParams,
   ): void {
-    if (!sameAgentOrUnknown(session, agentId)) {
+    if (!sameAgentOrUnknown(session, agentId, handle.definition.id)) {
       throw new AcpError(
         ACP_ERROR_CODES.configInvalid,
         `session ${session.sessionId} belongs to another agent`,

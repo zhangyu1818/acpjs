@@ -98,16 +98,22 @@ test('spawn, create, subscribe and prompt over the real in-process chain builds 
   const state = session.getSnapshot()
   expect(state.messages).toEqual([
     {
+      kind: 'user',
+      messageId: 'acpjs-client-prompt-4',
+      content: [{ type: 'text', text: 'go' }],
+      seq: 4,
+    },
+    {
       kind: 'agent',
       messageId: null,
       content: [{ type: 'text', text: 'Hello' }],
-      seq: 4,
+      seq: 5,
     },
     {
       kind: 'thought',
       messageId: null,
       content: [{ type: 'text', text: 'thinking' }],
-      seq: 6,
+      seq: 7,
     },
   ])
   expect(state.toolCalls.call_1).toMatchObject({

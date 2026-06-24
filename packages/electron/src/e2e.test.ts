@@ -92,6 +92,10 @@ function role(name: string): RoleReport {
 }
 
 beforeAll(async () => {
+  execSync('pnpm exec tsdown', {
+    cwd: packageDir,
+    stdio: 'pipe',
+  })
   execSync('pnpm exec tsdown -c test-app/bundle.config.ts', {
     cwd: packageDir,
     stdio: 'pipe',
@@ -184,7 +188,7 @@ test('both windows get their own port and reduce identical session state', () =>
 })
 
 test('window B receives each session event exactly once on its own port', () => {
-  expect(role('b').eventCount).toBe(9)
+  expect(role('b').eventCount).toBe(10)
 })
 
 test('preload exposes only the connect handshake on window.acp', () => {

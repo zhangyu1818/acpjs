@@ -3,6 +3,7 @@ import {
   type Client,
   type SessionNotification,
 } from '@agentclientprotocol/sdk'
+import { isDeepStrictEqual } from 'node:util'
 
 import { normalizeSessionUpdate } from './normalize.ts'
 import { sessionMeta } from './session-config.ts'
@@ -84,6 +85,37 @@ function findUpdateSession(
   )
 }
 
+function consumeClientPromptEcho(
+  session: SessionHandle,
+  normalized: ReturnType<typeof normalizeSessionUpdate>,
+): boolean {
+  if (normalized.type !== 'user-message-chunk') return false
+  const content = normalized.payload['content']
+  const echoes = session.clientPromptEchoes
+  if (!echoes?.length) return false
+
+  const remainingEchoes = [...echoes]
+  for (let index = 0; index < remainingEchoes.length; index += 1) {
+    const echo = remainingEchoes[index]
+    if (!echo) continue
+    const next = echo?.remaining[0]
+    if (!isDeepStrictEqual(next, content)) continue
+    const remaining = echo.remaining.slice(1)
+    if (remaining.length === 0) {
+      remainingEchoes.splice(index, 1)
+    } else {
+      remainingEchoes[index] = { remaining }
+    }
+    if (remainingEchoes.length === 0) {
+      delete session.clientPromptEchoes
+    } else {
+      session.clientPromptEchoes = remainingEchoes
+    }
+    return true
+  }
+  return false
+}
+
 function onSessionUpdate(
   context: HostClientContext,
   agentId: string,
@@ -127,6 +159,7 @@ function onSessionUpdate(
     return
   }
   const normalized = normalizeSessionUpdate(notification.update)
+  if (consumeClientPromptEcho(session, normalized)) return
   if (session.lifecycleOperation === 'load') {
     const replay = session.loadReplay ?? []
     replay.push(normalized)

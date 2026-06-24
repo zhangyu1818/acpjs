@@ -136,6 +136,7 @@ test('prompt emits normalized events for all modeled variants plus prompt-finish
     'session-status-change',
     'session-status-change',
     'user-message-chunk',
+    'user-message-chunk',
     'agent-message-chunk',
     'agent-thought-chunk',
     'tool-call',
@@ -151,6 +152,11 @@ test('prompt emits normalized events for all modeled variants plus prompt-finish
   ])
   const seqs = events.map((event) => event.seq)
   expect(seqs).toEqual(seqs.map((_, index) => index + 1))
+  expect(events[3]).toMatchObject({
+    type: 'user-message-chunk',
+    payload: { content: { type: 'text', text: 'go' } },
+    extensions: { acpjs: { source: 'client-prompt' } },
+  })
   const toolCallUpdate = events.find(
     (event) => event.type === 'tool-call-update',
   )
@@ -168,6 +174,84 @@ test('prompt emits normalized events for all modeled variants plus prompt-finish
   for (const event of events) {
     expect(() => structuredClone(event)).not.toThrow()
   }
+})
+
+test('prompt records client prompt as a user message when the agent does not echo it', async () => {
+  const { host, sessionId } = await activeSession({
+    turns: [
+      {
+        steps: [
+          {
+            kind: 'update',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'ok' },
+              messageId: 'a1',
+            },
+          },
+        ],
+      },
+    ],
+  })
+  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+
+  await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
+
+  const transcriptEvents = events.filter(
+    (event) =>
+      event.type === 'user-message-chunk' ||
+      event.type === 'agent-message-chunk',
+  )
+  expect(transcriptEvents).toMatchObject([
+    {
+      type: 'user-message-chunk',
+      payload: { content: { type: 'text', text: 'go' } },
+      extensions: { acpjs: { source: 'client-prompt' } },
+    },
+    {
+      type: 'agent-message-chunk',
+      payload: { content: { type: 'text', text: 'ok' } },
+    },
+  ])
+})
+
+test('prompt suppresses an exact agent echo of the client prompt', async () => {
+  const { host, sessionId } = await activeSession({
+    turns: [
+      {
+        steps: [
+          {
+            kind: 'update',
+            update: {
+              sessionUpdate: 'user_message_chunk',
+              content: { type: 'text', text: 'go' },
+              messageId: 'agent-user-1',
+            },
+          },
+          {
+            kind: 'update',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'ok' },
+              messageId: 'agent-1',
+            },
+          },
+        ],
+      },
+    ],
+  })
+  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+
+  await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
+
+  const userEvents = events.filter(
+    (event) => event.type === 'user-message-chunk',
+  )
+  expect(userEvents).toHaveLength(1)
+  expect(userEvents[0]).toMatchObject({
+    payload: { content: { type: 'text', text: 'go' } },
+    extensions: { acpjs: { source: 'client-prompt' } },
+  })
 })
 
 test('UNSTABLE plan_update degrades to unrecognized-update (INV-4)', async () => {

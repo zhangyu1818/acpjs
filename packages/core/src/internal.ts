@@ -16,6 +16,7 @@ import type {
   AgentCapabilities,
   AuthMethod,
   ClientSideConnection,
+  ContentBlock,
   McpServer,
   PermissionOption,
   RequestPermissionOutcome,
@@ -30,6 +31,10 @@ export interface BufferedSessionEvent {
   type: AcpSessionEvent['type']
   payload: unknown
   extensions?: AcpEventExtensions
+}
+
+export interface ClientPromptEcho {
+  remaining: ContentBlock[]
 }
 
 export interface AgentHandle {
@@ -65,6 +70,7 @@ export interface SessionHandle {
   nextSeq: number
   hasModes: boolean
   hasConfigOptions: boolean
+  clientPromptEchoes?: ClientPromptEcho[]
   subscribers: Set<EventSubscriber>
 }
 
