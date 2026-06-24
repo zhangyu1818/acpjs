@@ -7,10 +7,10 @@ import {
 import { agentSnapshot, sessionSnapshot } from './snapshots.ts'
 
 import type {
-  AcpEvent,
-  AcpEventExtensions,
-  AcpHostEvent,
-  AcpSessionEvent,
+  AcpjsEvent,
+  AcpjsEventExtensions,
+  AcpjsHostEvent,
+  AcpjsSessionEvent,
   AgentExitReason,
   AgentStatus,
   DiagnosticLevel,
@@ -25,13 +25,13 @@ export interface ConfigInitSource {
   configOptions?: unknown
 }
 
-function isSubscriberErrorDiagnostic(event: AcpEvent): boolean {
+function isSubscriberErrorDiagnostic(event: AcpjsEvent): boolean {
   return (
     event.type === 'diagnostic' && event.payload.code === 'subscriber/error'
   )
 }
 
-type HostEventInput<T = AcpHostEvent> = T extends AcpHostEvent
+type HostEventInput<T = AcpjsHostEvent> = T extends AcpjsHostEvent
   ? Omit<T, 'seq' | 'ts'>
   : never
 
@@ -47,7 +47,7 @@ export function hostBus(host: object): EventBus | undefined {
 
 export class EventBus {
   #storage: StorageAdapter
-  #hostLog: AcpHostEvent[] = []
+  #hostLog: AcpjsHostEvent[] = []
   #hostNextSeq = 1
   #hostSubscribers = new Set<EventSubscriber>()
   #pendingStorageWrites = new Set<Promise<void>>()
@@ -61,7 +61,7 @@ export class EventBus {
       ...partial,
       seq: this.#hostNextSeq,
       ts: Date.now(),
-    } as AcpHostEvent
+    } as AcpjsHostEvent
     if (!isStructuredCloneable(event)) {
       if (
         event.type === 'diagnostic' &&
@@ -87,9 +87,9 @@ export class EventBus {
 
   emitSession(
     session: SessionHandle,
-    type: AcpSessionEvent['type'],
+    type: AcpjsSessionEvent['type'],
     payload: unknown,
-    extensions?: AcpEventExtensions,
+    extensions?: AcpjsEventExtensions,
   ): void {
     const event = {
       sessionId: session.sessionId,
@@ -98,7 +98,7 @@ export class EventBus {
       type,
       payload,
       ...(extensions ? { extensions } : {}),
-    } as AcpSessionEvent
+    } as AcpjsSessionEvent
     if (!isStructuredCloneable(event)) {
       this.diagnostic('error', 'event/unserializable', {
         message: `rejected unserializable ${type} event`,
@@ -249,7 +249,7 @@ export class EventBus {
 
   publishCommittedSessionEvent(
     session: SessionHandle,
-    event: AcpSessionEvent,
+    event: AcpjsSessionEvent,
   ): void {
     if (event.sessionId !== session.sessionId) return
     if (!isStructuredCloneable(event)) {
@@ -273,7 +273,7 @@ export class EventBus {
     }
   }
 
-  #queueStorage(event: AcpEvent): void {
+  #queueStorage(event: AcpjsEvent): void {
     if (
       event.type === 'diagnostic' &&
       event.payload.code === 'storage/write-failed'
@@ -310,7 +310,7 @@ export class EventBus {
 
   #notify(
     callback: EventSubscriber,
-    event: AcpEvent,
+    event: AcpjsEvent,
     reportErrors: boolean,
   ): void {
     try {

@@ -1,128 +1,45 @@
 import {
+  agent,
+  methods,
   PROTOCOL_VERSION,
   RequestError,
-  type Agent,
-  type AgentSideConnection,
+  type AgentApp,
+  type AgentContext,
   type PromptResponse,
 } from '@agentclientprotocol/sdk'
 
+import { performFixtureStep } from './agent-steps.ts'
 import { turnForPrompt, turnProgram } from './interpreter.ts'
 
-import type { FixtureScenario, FixtureStep } from './scenario.ts'
+import type { FixtureScenario } from './scenario.ts'
 
 export interface FixtureIo {
-  writeRaw: (message: unknown) => void
+  disconnect: () => void
   exit: (code: number) => never
 }
 
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve()
-      return
-    }
-    const timer = setTimeout(done, ms)
-    function done() {
-      signal.removeEventListener('abort', done)
-      clearTimeout(timer)
-      resolve()
-    }
-    signal.addEventListener('abort', done)
-  })
+function requireExpectedMcpServers(
+  expectedServers: readonly { name: string }[] | undefined,
+  receivedServers: readonly { name: string }[] | undefined,
+): void {
+  if (expectedServers === undefined) return
+  const expected = expectedServers.map((server) => server.name)
+  const received = (receivedServers ?? []).map((server) => server.name)
+  if (JSON.stringify(received) !== JSON.stringify(expected)) {
+    throw RequestError.invalidParams({ expected, received })
+  }
 }
 
 export function createFixtureAgent(
   scenario: FixtureScenario,
-  conn: AgentSideConnection,
   io: FixtureIo,
-): Agent {
+): AgentApp {
   let promptIndex = 0
   let authenticated = false
   const aborts = new Map<string, AbortController>()
 
-  async function performStep(
-    step: FixtureStep,
-    sessionId: string,
-    signal: AbortSignal,
-  ): Promise<unknown> {
-    switch (step.kind) {
-      case 'update': {
-        await conn.sessionUpdate({ sessionId, update: step.update })
-        return undefined
-      }
-      case 'permission': {
-        const response = await conn.requestPermission({
-          sessionId,
-          toolCall: step.toolCall,
-          options: step.options,
-        })
-        return response.outcome
-      }
-      case 'rawUpdate': {
-        io.writeRaw({
-          jsonrpc: '2.0',
-          method: 'session/update',
-          params: { sessionId, update: step.update },
-        })
-        return undefined
-      }
-      case 'exit': {
-        return io.exit(step.code)
-      }
-      case 'sleep': {
-        await sleep(step.ms, signal)
-        return undefined
-      }
-      case 'readTextFile': {
-        await conn.readTextFile({
-          sessionId,
-          path: step.path,
-          ...(step.line === undefined ? {} : { line: step.line }),
-          ...(step.limit === undefined ? {} : { limit: step.limit }),
-        })
-        return undefined
-      }
-      case 'writeTextFile': {
-        await conn.writeTextFile({
-          sessionId,
-          path: step.path,
-          content: step.content,
-        })
-        return undefined
-      }
-      case 'terminal': {
-        const terminal = await conn.createTerminal({
-          sessionId,
-          command: step.command,
-          ...(step.args ? { args: step.args } : {}),
-          ...(step.env ? { env: step.env } : {}),
-          ...(step.cwd ? { cwd: step.cwd } : {}),
-          ...(step.outputByteLimit === undefined
-            ? {}
-            : { outputByteLimit: step.outputByteLimit }),
-        })
-        for (const action of step.actions ?? []) {
-          if (action === 'output') {
-            await terminal.currentOutput()
-          } else if (action === 'waitForExit') {
-            await terminal.waitForExit()
-          } else if (action === 'kill') {
-            await terminal.kill()
-          } else {
-            await terminal.release()
-          }
-        }
-        return undefined
-      }
-      default: {
-        throw RequestError.internalError({
-          unsupportedStep: step.kind,
-        })
-      }
-    }
-  }
-
   async function runTurn(
+    client: AgentContext,
     sessionId: string,
     signal: AbortSignal,
   ): Promise<PromptResponse> {
@@ -134,15 +51,21 @@ export function createFixtureAgent(
       if (next.done) {
         return signal.aborted ? { stopReason: 'cancelled' } : next.value
       }
-      feedback = await performStep(next.value, sessionId, signal)
+      feedback = await performFixtureStep(
+        client,
+        next.value,
+        sessionId,
+        signal,
+        io,
+      )
       if (signal.aborted) {
         return { stopReason: 'cancelled' }
       }
     }
   }
 
-  const agent: Agent = {
-    async initialize() {
+  const app = agent({ name: '@acpjs/fixture-agent' })
+    .onRequest(methods.agent.initialize, () => {
       const init = scenario.initialize
       return {
         protocolVersion: init?.protocolVersion ?? PROTOCOL_VERSION,
@@ -151,8 +74,8 @@ export function createFixtureAgent(
           : {}),
         ...(init?.authMethods ? { authMethods: init.authMethods } : {}),
       }
-    },
-    async newSession() {
+    })
+    .onRequest(methods.agent.session.new, () => {
       const session = scenario.session
       if (session?.authRequired === true && !authenticated) {
         throw RequestError.authRequired()
@@ -171,31 +94,30 @@ export function createFixtureAgent(
           ? { configOptions: session.configOptions }
           : {}),
       }
-    },
-    async authenticate() {
+    })
+    .onRequest(methods.agent.authenticate, () => {
       authenticated = true
       return {}
-    },
-    async prompt(params) {
+    })
+    .onRequest(methods.agent.session.prompt, async ({ client, params }) => {
       const controller = new AbortController()
       aborts.set(params.sessionId, controller)
       try {
-        return await runTurn(params.sessionId, controller.signal)
+        return await runTurn(client, params.sessionId, controller.signal)
       } finally {
         aborts.delete(params.sessionId)
       }
-    },
-    async cancel(params) {
+    })
+    .onNotification(methods.agent.session.cancel, ({ params }) => {
       aborts.get(params.sessionId)?.abort()
-    },
-  }
+    })
 
   const capabilities = scenario.initialize?.agentCapabilities
 
   let loadCalls = 0
 
   if (capabilities?.loadSession === true) {
-    agent.loadSession = async (params) => {
+    app.onRequest(methods.agent.session.load, async ({ client, params }) => {
       const load = scenario.loadSession
       loadCalls += 1
       if (
@@ -209,33 +131,43 @@ export function createFixtureAgent(
         )
       }
       for (const step of load?.steps ?? []) {
-        await performStep(step, params.sessionId, new AbortController().signal)
+        await performFixtureStep(
+          client,
+          step,
+          params.sessionId,
+          new AbortController().signal,
+          io,
+        )
       }
       for (const update of load?.replay ?? []) {
-        await conn.sessionUpdate({ sessionId: params.sessionId, update })
+        await client.notify(methods.client.session.update, {
+          sessionId: params.sessionId,
+          update,
+        })
       }
+      requireExpectedMcpServers(load?.expectMcpServers, params.mcpServers)
       return {
         ...(load?.modes ? { modes: load.modes } : {}),
         ...(load?.configOptions ? { configOptions: load.configOptions } : {}),
       }
-    }
+    })
   }
 
   const sessionCapabilities = capabilities?.sessionCapabilities
   let resumeCalls = 0
 
   if (sessionCapabilities?.list) {
-    agent.listSessions = async () => {
+    app.onRequest(methods.agent.session.list, () => {
       const list = scenario.listSessions
       return {
         sessions: list?.sessions ?? [],
         ...(list?.nextCursor ? { nextCursor: list.nextCursor } : {}),
       }
-    }
+    })
   }
 
   if (sessionCapabilities?.resume) {
-    agent.resumeSession = async (params) => {
+    app.onRequest(methods.agent.session.resume, async ({ client, params }) => {
       const resume = scenario.resumeSession
       resumeCalls += 1
       if (
@@ -249,34 +181,46 @@ export function createFixtureAgent(
         )
       }
       for (const step of resume?.steps ?? []) {
-        await performStep(step, params.sessionId, new AbortController().signal)
+        await performFixtureStep(
+          client,
+          step,
+          params.sessionId,
+          new AbortController().signal,
+          io,
+        )
       }
-      if (resume?.expectMcpServers) {
-        const expected = resume.expectMcpServers.map((server) => server.name)
-        const received = (params.mcpServers ?? []).map((server) => server.name)
-        if (JSON.stringify(received) !== JSON.stringify(expected)) {
-          throw RequestError.invalidParams({ expected, received })
-        }
-      }
+      requireExpectedMcpServers(resume?.expectMcpServers, params.mcpServers)
       return {
         ...(resume?.modes ? { modes: resume.modes } : {}),
         ...(resume?.configOptions
           ? { configOptions: resume.configOptions }
           : {}),
       }
-    }
+    })
   }
 
   if (sessionCapabilities?.close) {
-    agent.closeSession = async () => ({})
+    app.onRequest(methods.agent.session.close, () => {
+      const error = scenario.closeSession?.error
+      if (error) {
+        throw new RequestError(error.code, error.message, error.data)
+      }
+      return {}
+    })
   }
 
   if (sessionCapabilities?.delete) {
-    agent.deleteSession = async () => ({})
+    app.onRequest(methods.agent.session.delete, () => {
+      const error = scenario.deleteSession?.error
+      if (error) {
+        throw new RequestError(error.code, error.message, error.data)
+      }
+      return {}
+    })
   }
 
   if (capabilities?.auth?.logout) {
-    agent.logout = async () => ({})
+    app.onRequest(methods.agent.logout, () => ({}))
   }
 
   const modes =
@@ -285,7 +229,7 @@ export function createFixtureAgent(
     scenario.resumeSession?.modes
 
   if (modes) {
-    agent.setSessionMode = async () => ({})
+    app.onRequest(methods.agent.session.setMode, () => ({}))
   }
 
   const configOptions =
@@ -295,8 +239,10 @@ export function createFixtureAgent(
     scenario.resumeSession?.configOptions
 
   if (configOptions) {
-    agent.setSessionConfigOption = async () => ({ configOptions })
+    app.onRequest(methods.agent.session.setConfigOption, () => ({
+      configOptions,
+    }))
   }
 
-  return agent
+  return app
 }

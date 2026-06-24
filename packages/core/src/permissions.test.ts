@@ -12,7 +12,7 @@ import {
 
 import type { FixtureScenario, FixtureStep } from '@acpjs/fixture-agent'
 import type {
-  AcpSessionEvent,
+  AcpjsSessionEvent,
   PermissionRequestCreatedPayload,
   PermissionRequestResolvedPayload,
 } from '@acpjs/protocol'
@@ -50,12 +50,12 @@ async function sessionWithPermission(scenario?: FixtureScenario) {
   const agent = await host.spawnAgent(definition)
   const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
-  const events = collectEvents(host, created.sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, created.sessionId) as AcpjsSessionEvent[]
   return { host, agentId: agent.agentId, sessionId: created.sessionId, events }
 }
 
 function createdPayload(
-  events: AcpSessionEvent[],
+  events: AcpjsSessionEvent[],
 ): PermissionRequestCreatedPayload | undefined {
   const event = events.find(
     (candidate) => candidate.type === 'permission-request-created',
@@ -66,7 +66,7 @@ function createdPayload(
 }
 
 function resolvedPayload(
-  events: AcpSessionEvent[],
+  events: AcpjsSessionEvent[],
 ): PermissionRequestResolvedPayload | undefined {
   const event = events.find(
     (candidate) => candidate.type === 'permission-request-resolved',
@@ -154,7 +154,7 @@ test('agent crash supersedes pending permissions and rejects the in-flight promp
   const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
   const sessionId = created.sessionId
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, sessionId) as AcpjsSessionEvent[]
 
   const prompting = host.prompt(sessionId, [{ type: 'text', text: 'go' }])
   await waitFor(() => createdPayload(events) !== undefined)

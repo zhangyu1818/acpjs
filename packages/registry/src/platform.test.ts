@@ -3,17 +3,17 @@ import { expect, test } from 'vitest'
 import { createRegistryClient } from './index.ts'
 import { jsonFetch, makeIndex, makeTmpDir } from './test-support.ts'
 
-import type { AcpHostEvent } from '@acpjs/protocol'
+import type { AcpjsHostEvent } from '@acpjs/protocol'
 
 function collect(client: {
-  subscribe(listener: (event: AcpHostEvent) => void): () => void
-}): AcpHostEvent[] {
-  const events: AcpHostEvent[] = []
+  subscribe(listener: (event: AcpjsHostEvent) => void): () => void
+}): AcpjsHostEvent[] {
+  const events: AcpjsHostEvent[] = []
   client.subscribe((event) => events.push(event))
   return events
 }
 
-function stages(events: AcpHostEvent[]): string[] {
+function stages(events: AcpjsHostEvent[]): string[] {
   return events
     .filter((event) => event.type === 'install-progress')
     .map((event) => event.payload.stage)

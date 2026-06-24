@@ -1,7 +1,7 @@
 import {
   createInitialSessionState,
   reduce,
-  type AgentSnapshotWire,
+  type AgentSnapshot,
   type SessionState,
 } from '@acpjs/protocol'
 
@@ -67,7 +67,7 @@ export function createCountingClient(
   }
 
   const agentId = 'agent-1'
-  const agentSnapshot: AgentSnapshotWire = Object.freeze({
+  const agentSnapshot: AgentSnapshot = Object.freeze({
     agentId,
     status: 'ready',
     restartCount: 0,

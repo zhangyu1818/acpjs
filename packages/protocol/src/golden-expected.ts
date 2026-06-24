@@ -4,7 +4,7 @@ import {
   goldenSessionId,
 } from './golden-corpus'
 
-import type { AcpEvent, SessionState } from './index'
+import type { AcpjsEvent, SessionState } from './index'
 
 const coveredEventTypes = {
   'user-message-chunk': true,
@@ -32,11 +32,11 @@ const coveredEventTypes = {
   diagnostic: true,
   'session-updated': true,
   'permission-updated': true,
-} satisfies Record<AcpEvent['type'], true>
+} satisfies Record<AcpjsEvent['type'], true>
 
 export const allEventTypes = Object.keys(
   coveredEventTypes,
-) as AcpEvent['type'][]
+) as AcpjsEvent['type'][]
 
 export const goldenExpectedState: SessionState = {
   sessionId: goldenSessionId,
@@ -94,7 +94,6 @@ export const goldenExpectedState: SessionState = {
     cachedReadTokens: 5,
   },
   lastStopReason: 'end_turn',
-  lastPromptError: null,
   connection: { status: 'active', resumed: true },
   pendingPermissionRequests: [],
   terminals: {

@@ -1,8 +1,10 @@
 # @acpjs/protocol
 
 The foundation layer of acpjs: a normalized event model, the `SessionState`
-model, a pure `reduce` reducer, and Transport envelope types for the Agent
-Client Protocol (ACP).
+model, a pure `reduce` reducer, and acpjs host envelope types derived from
+Agent Client Protocol (ACP) traffic. This package does not define ACP wire
+messages; agent-facing protocol traffic stays owned by the official
+`@agentclientprotocol/sdk`.
 
 This package is **types + pure functions only**. It is environment-neutral: it
 references no Node built-ins and has a type-only dependency on
@@ -25,12 +27,12 @@ environment.
 
 ```ts
 import {
-  type AcpEvent,
+  type AcpjsEvent,
   createInitialSessionState,
   reduce,
 } from '@acpjs/protocol'
 
-const events: AcpEvent[] = [
+const events: AcpjsEvent[] = [
   {
     sessionId: 'sess-1',
     seq: 1,
@@ -67,8 +69,10 @@ reference unchanged for events it does not reduce).
 
 ### Event model
 
-- `AcpEvent` — the closed discriminated union of every event, equal to
-  `AcpSessionEvent | AcpHostEvent` (19 session events + 6 host events).
+- `AcpjsEvent` — the acpjs-normalized projection-event union, equal to
+  `AcpjsSessionEvent | AcpjsHostEvent` (19 session events + 6 host events).
+  `AcpjsSessionEvent` maps stable ACP session updates into reducer-friendly
+  events; `AcpjsHostEvent` is acpjs host projection/telemetry.
 - Member interfaces, e.g. `UserMessageChunkEvent`, `AgentMessageChunkEvent`,
   `AgentThoughtChunkEvent`, `ToolCallEvent`, `ToolCallUpdateEvent`, `PlanEvent`,
   `AvailableCommandsUpdateEvent`, `CurrentModeUpdateEvent`,
@@ -85,8 +89,8 @@ reference unchanged for events it does not reduce).
   `HostPermissionSnapshot`, `TerminalOutputPayload`, `InstallProgressPayload`,
   `DiagnosticPayload`, `UnrecognizedUpdatePayload`.
 - Enums and aliases: `SessionStatus`, `AgentStatus`, `AgentExitReason`,
-  `InstallStage`, `DiagnosticLevel`, `AcpEventExtensions`,
-  `AcpHostProjectionEvent`, `AcpHostTelemetryEvent`.
+  `InstallStage`, `DiagnosticLevel`, `AcpjsEventExtensions`,
+  `AcpjsHostProjectionEvent`, `AcpjsHostTelemetryEvent`.
 
 Payloads reuse SDK protocol types. The top-level `_meta` field is removed at the
 type level (see implementation-defined notes); it surfaces on the envelope as
@@ -97,7 +101,7 @@ type level (see implementation-defined notes); it surfaces on the envelope as
 - `SessionState` — the derived per-session state.
 - Supporting types: `SessionMessage`, `MessageKind`, `ToolCallState`,
   `TerminalOutputState`, `SessionUsageState`, `SessionConnectionState`,
-  `PendingPermissionRequest`, `ResolvedPermissionRequest`, `PromptErrorState`.
+  `PendingPermissionRequest`, `ResolvedPermissionRequest`.
 - `createInitialSessionState(sessionId)` — builds the empty initial state.
 - `reduce(state, event)` — the pure reducer.
 
@@ -109,27 +113,28 @@ type level (see implementation-defined notes); it surfaces on the envelope as
   buffers; it is exported for callers that need the same byte-bounded, tail-
   preserving truncation.
 
-### Transport envelopes
+### acpjs host envelopes
 
-- `RpcRequest`, `RpcResponse`, `InboundRequest`, `InboundResponse`, `ErrorObject`.
+- `HostRequest`, `HostResponse`, `InboundRequest`, `InboundResponse`, `ErrorObject`.
 - `InboundRequest.kind` is an open string with one known member, `'permission'`
   (typed as `'permission' | (string & {})`).
-- `ACP_ERROR_CODES` — frozen error-code constants in the `acpjs/*` namespace
+- `ACPJS_ERROR_CODES` — frozen host-boundary sentinel codes in the `acpjs/*`
+  namespace
   (8 codes: `config-invalid`, `prompt-in-flight`, `already-answered`,
   `session-closed`, `agent-exited`, `capability-unsupported`, `agent-error`,
-  `transport-closed`), plus the `AcpErrorCode` type and the
-  `isAcpErrorCode(value)` guard.
+  `transport-closed`), plus the `AcpjsErrorCode` type and the
+  `isAcpjsErrorCode(value)` guard.
 
-### Transport contract
+### acpjs host transport contract
 
-- `Transport` — `connect(handlers)`, `request(request)`,
+- `HostClientTransport` — `connect(handlers)`, `request(request)`,
   `subscribe(params, onEvent)`, `respondInbound(response)`, `close()`.
-- `TransportHandlers` — `onInboundRequest` + `onLifecycle` +
+- `HostClientTransportHandlers` — `onInboundRequest` + `onLifecycle` +
   optional `onSubscriptionError(params, error)`.
-- `TransportLifecycleEvent` — `connecting → connected → closed`, with an
+- `HostClientTransportLifecycleEvent` — `connecting → connected → closed`, with an
   optional `error` on the terminating path.
-- `TransportSubscribeParams` — optional `sessionId` + required `fromSeq`.
-- `TransportConnectionStatus`, `TransportUnsubscribe`.
+- `HostClientTransportSubscribeParams` — optional `sessionId` + required `fromSeq`.
+- `HostClientTransportConnectionStatus`, `HostClientTransportUnsubscribe`.
 - `EnvelopeEndpoint` — the host-side contract endpoint (request + event
   subscription + reverse request + `respondInbound`), with no connection
   lifecycle.
@@ -137,19 +142,21 @@ type level (see implementation-defined notes); it surfaces on the envelope as
 While `connected`, envelope delivery is order-preserving. Reconnection is not a
 transport obligation; a new connection backfills using `fromSeq`.
 
-### Wire contract
+### acpjs host/client method contract
 
 Shared by `@acpjs/core` and `@acpjs/client` to avoid duplicated literals.
+These names are the acpjs control-plane contract between a host and a client;
+they are not ACP agent method names.
 
-- `ACPJS_HOST_RPC_METHODS` — frozen RPC method-name constants
+- `ACPJS_HOST_METHODS` — frozen acpjs host method ids
   (`agents/spawn|list|dispose`,
   `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`),
-  pinned by tests, plus the `AcpRpcMethod` type. `agents/dispose` carries
+  pinned by tests, plus the `AcpjsHostMethod` type. `agents/dispose` carries
   `disposeAgent(agentId)` across the envelope (the cross-process counterpart of
   the host method / `client.agents.dispose`).
 - Shared payload shapes: `AgentDefinition`, `SessionConfigValue`,
   `CreateOrLoadSessionParams`, `ResumeSessionParams`, `CreateSessionResult`,
-  `AgentCapabilitiesWire`, `AgentSnapshotWire`, `SessionSnapshotWire`.
+  `AgentCapabilitiesSnapshot`, `AgentSnapshot`, `SessionSnapshot`.
 
 ### SDK protocol re-exports
 
@@ -172,21 +179,21 @@ Session events carry `sessionId` and an in-session `seq`:
 `session-status-change`, `session-reset`, `permission-request-created`,
 `permission-request-resolved`, `terminal-output`, `unrecognized-update`.
 
-Host events carry a host-level `seq`. `AcpHostProjectionEvent` is the product
+Host events carry a host-level `seq`. `AcpjsHostProjectionEvent` is the product
 state projection subset:
 
 - `agent-updated` — top-level `agentId`; payload is the full
-  `AgentSnapshotWire`.
+  `AgentSnapshot`.
 - `agent-removed` — `AgentRemovedEvent`, payload `{ agentId }`; emitted when
   `disposeAgent` tears an agent down and removes it from the host registry
   (distinct from an `exited` tombstone, which stays in the registry). Added as a
   new union variant — a non-breaking addition, since consumers already tolerate
   unknown/new variants.
-- `session-updated` — full `SessionSnapshotWire` session projection.
+- `session-updated` — full `SessionSnapshot` session projection.
 - `permission-updated` — host-level permission pending/answered/superseded
   projection.
 
-`AcpHostTelemetryEvent` is the non-state telemetry subset:
+`AcpjsHostTelemetryEvent` is the non-state telemetry subset:
 
 - `install-progress` — top-level `agentId`.
 - `diagnostic` — `agentId` optional (registry-scope diagnostics have no owning
@@ -217,7 +224,7 @@ state projection subset:
   (core normalizes `null` away; the reducer handles it defensively).
   `content`/`locations` are replaced wholesale. Updates to an unknown
   `toolCallId` leave state unchanged.
-- `ToolCallState.extensions?: AcpEventExtensions` carries a tool call's
+- `ToolCallState.extensions?: AcpjsEventExtensions` carries a tool call's
   `_meta`/extensions through `reduce` verbatim (e.g.
   `extensions._meta.subagent_session_info`); acpjs interprets no keys.
 - `session-info-update`: tri-state semantics follow the SDK — an absent key means
@@ -225,14 +232,15 @@ state projection subset:
 - `prompt-finished` does not change connection status (returning to `active` is
   expressed separately by core via a `session-status-change` event). When
   `usage` is absent, `lastTurnUsage` is cleared (it reflects only the most recent
-  turn).
+  turn). Core prompt-time agent protocol errors reject instead of fabricating a
+  `StopReason`.
 - `session-status-change`: the `resumed` flag is sticky until the next
   `disconnected`/`closed`/`deleted`, which resets it.
-- `AgentCapabilitiesWire` is an explicit stable ACP capability projection used
+- `AgentCapabilitiesSnapshot` is an explicit stable ACP capability projection used
   by acpjs. It intentionally does not mirror SDK experimental/auth/provider
   fields that are outside the acpjs product contract. The agent's advertised
   auth methods are surfaced separately on the snapshot as
-  `AgentSnapshotWire.authMethods` (`AuthMethod[]`, the `initialize` response's
+  `AgentSnapshot.authMethods` (`AuthMethod[]`, the `initialize` response's
   methods verbatim) — acpjs implements no authenticate flow, so this is the data
   integrators read to drive out-of-band login.
 - `current-mode-update` arriving before any mode state synthesizes

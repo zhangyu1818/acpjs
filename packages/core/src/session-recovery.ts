@@ -4,12 +4,14 @@ import {
   type SessionHandle,
 } from './internal.ts'
 
-import type { AcpSessionEvent } from '@acpjs/protocol'
+import type { AcpjsSessionEvent } from '@acpjs/protocol'
 
 import type { SessionManager } from './session-manager.ts'
 import type { StorageAdapter } from './storage.ts'
 
-function closeStalePermissions(events: AcpSessionEvent[]): AcpSessionEvent[] {
+function closeStalePermissions(
+  events: AcpjsSessionEvent[],
+): AcpjsSessionEvent[] {
   const pending = new Set<string>()
   for (const event of events) {
     if (event.type === 'permission-request-created') {
@@ -86,7 +88,7 @@ export async function restoreSessions(
     }
     if (manager.sessions.has(meta.sessionId)) continue
     const events = await storage.loadEvents(meta.sessionId)
-    const valid: AcpSessionEvent[] = []
+    const valid: AcpjsSessionEvent[] = []
     for (const event of events) {
       if (!isStructuredCloneable(event)) {
         manager.bus.diagnostic('error', 'event/unserializable', {
@@ -95,7 +97,7 @@ export async function restoreSessions(
         })
         continue
       }
-      valid.push(event as AcpSessionEvent)
+      valid.push(event as AcpjsSessionEvent)
     }
     const eventsWithClosedPermissions = closeStalePermissions(valid)
     const lastRestoredStatus = eventsWithClosedPermissions.findLast(

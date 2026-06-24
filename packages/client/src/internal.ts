@@ -1,7 +1,9 @@
+import type { AcpjsHostMethod } from '@acpjs/protocol'
+
 import type { ChangeListener } from './types.ts'
 
-export type RpcCall = (
-  method: string,
+export type HostCall = (
+  method: AcpjsHostMethod,
   params: Record<string, unknown>,
 ) => Promise<unknown>
 

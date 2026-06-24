@@ -14,7 +14,7 @@ test('the package export surface is sealed', () => {
   ])
 })
 
-test('facade objects expose no raw RPC, raw notification or selector escape hatches', async () => {
+test('facade objects expose no raw host-envelope, raw notification or selector escape hatches', async () => {
   const hub = createFakeHub()
   hub.handle('agents/spawn', () => ({ agentId: 'agent-1' }))
   hub.handle('sessions/create', () => ({

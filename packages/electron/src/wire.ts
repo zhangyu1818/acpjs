@@ -1,14 +1,14 @@
 import {
-  ACP_ERROR_CODES,
-  isAcpErrorCode,
-  type AcpEvent,
+  ACPJS_ERROR_CODES,
+  isAcpjsErrorCode,
+  type AcpjsEvent,
   type EnvelopeEndpoint,
   type ErrorObject,
   type InboundRequest,
   type InboundResponse,
-  type RpcRequest,
-  type RpcResponse,
-  type TransportSubscribeParams,
+  type HostRequest,
+  type HostResponse,
+  type HostClientTransportSubscribeParams,
 } from '@acpjs/protocol'
 
 export const HANDSHAKE_CHANNEL = 'acpjs:handshake'
@@ -21,15 +21,19 @@ export interface AcpExposedBridge {
 }
 
 export type RendererToMainMessage =
-  | { t: 'rpc'; request: RpcRequest }
-  | { t: 'subscribe'; subId: string; params: TransportSubscribeParams }
+  | { t: 'request'; request: HostRequest }
+  | {
+      t: 'subscribe'
+      subId: string
+      params: HostClientTransportSubscribeParams
+    }
   | { t: 'unsubscribe'; subId: string }
   | { t: 'inbound-response'; ackId: string; response: InboundResponse }
   | { t: 'close' }
 
 export type MainToRendererMessage =
-  | { t: 'rpc-result'; response: RpcResponse }
-  | { t: 'event'; subId: string; event: AcpEvent }
+  | { t: 'response'; response: HostResponse }
+  | { t: 'event'; subId: string; event: AcpjsEvent }
   | { t: 'sub-error'; subId: string; error: ErrorObject }
   | { t: 'inbound-request'; request: InboundRequest }
   | { t: 'inbound-ack'; ackId: string; error?: ErrorObject }
@@ -51,7 +55,10 @@ export function toWireError(error: unknown): ErrorObject {
       data?: unknown
       retryable?: unknown
     }
-    if (typeof candidate.code === 'string' && isAcpErrorCode(candidate.code)) {
+    if (
+      typeof candidate.code === 'string' &&
+      isAcpjsErrorCode(candidate.code)
+    ) {
       return {
         code: candidate.code,
         message: typeof candidate.message === 'string' ? candidate.message : '',
@@ -61,7 +68,7 @@ export function toWireError(error: unknown): ErrorObject {
     }
   }
   return {
-    code: ACP_ERROR_CODES.agentError,
+    code: ACPJS_ERROR_CODES.agentError,
     message: error instanceof Error ? error.message : String(error),
     retryable: false,
   }
@@ -100,13 +107,13 @@ export function wireEndpointToPort(
     if (closed) return
     const message = data as RendererToMainMessage
     switch (message.t) {
-      case 'rpc': {
+      case 'request': {
         const id = message.request.id
         void endpoint.request(message.request).then(
-          (response) => post({ t: 'rpc-result', response }),
+          (response) => post({ t: 'response', response }),
           (error: unknown) =>
             post({
-              t: 'rpc-result',
+              t: 'response',
               response: { id, ok: false, error: toWireError(error) },
             }),
         )

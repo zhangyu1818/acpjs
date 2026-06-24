@@ -1,9 +1,12 @@
+import { isDeepStrictEqual } from 'node:util'
+
 import {
   RequestError,
-  type Client,
+  client as createClientApp,
+  methods,
+  type ClientApp,
   type SessionNotification,
 } from '@agentclientprotocol/sdk'
-import { isDeepStrictEqual } from 'node:util'
 
 import { normalizeSessionUpdate } from './normalize.ts'
 import { sessionMeta } from './session-config.ts'
@@ -98,7 +101,7 @@ function consumeClientPromptEcho(
   for (let index = 0; index < remainingEchoes.length; index += 1) {
     const echo = remainingEchoes[index]
     if (!echo) continue
-    const next = echo?.remaining[0]
+    const next = echo.remaining[0]
     if (!isDeepStrictEqual(next, content)) continue
     const remaining = echo.remaining.slice(1)
     if (remaining.length === 0) {
@@ -175,28 +178,29 @@ function onSessionUpdate(
 export function createAgentClient(
   context: HostClientContext,
   agentId: string,
-): Client {
-  const client: Client = {
-    async sessionUpdate(notification) {
-      onSessionUpdate(context, agentId, notification)
-    },
-    requestPermission(params) {
+): ClientApp {
+  const client = createClientApp({ name: '@acpjs/core' })
+    .onNotification(methods.client.session.update, ({ params }) => {
+      onSessionUpdate(context, agentId, params)
+    })
+    .onRequest(methods.client.session.requestPermission, ({ params }) => {
       const session = requireReverseSession(context, agentId, params.sessionId)
       return context.router.handle(session, params)
-    },
-  }
+    })
   const { readTextFile, writeTextFile } = context.fsHandler
   if (typeof readTextFile === 'function') {
-    client.readTextFile = async (params) => {
+    const read = readTextFile
+    client.onRequest(methods.client.fs.readTextFile, ({ params }) => {
       requireReverseSession(context, agentId, params.sessionId)
-      return readTextFile.call(context.fsHandler, params)
-    }
+      return read.call(context.fsHandler, params)
+    })
   }
   if (typeof writeTextFile === 'function') {
-    client.writeTextFile = async (params) => {
+    const write = writeTextFile
+    client.onRequest(methods.client.fs.writeTextFile, ({ params }) => {
       requireReverseSession(context, agentId, params.sessionId)
-      return writeTextFile.call(context.fsHandler, params)
-    }
+      return write.call(context.fsHandler, params)
+    })
   }
   const terminal = context.terminalHandler
   const {
@@ -214,47 +218,59 @@ export function createAgentClient(
     typeof releaseTerminal === 'function' &&
     typeof terminal.cleanupSession === 'function'
   ) {
+    const create = createTerminal
+    const output = terminalOutput
+    const wait = waitForTerminalExit
+    const kill = killTerminal
+    const release = releaseTerminal
     const terminalOwners = new Map<string, string>()
     const requireTerminalOwner = (
       sessionId: string,
       terminalId: string,
     ): void => {
       const owner = terminalOwners.get(terminalId)
-      if (owner !== undefined && owner !== sessionId) {
+      if (owner === undefined) {
+        throw RequestError.invalidParams(
+          { sessionId, terminalId },
+          'unknown terminal',
+        )
+      }
+      if (owner !== sessionId) {
         throw RequestError.invalidParams(
           { sessionId, terminalId },
           'terminal belongs to another session',
         )
       }
     }
-    client.createTerminal = async (params) => {
-      requireReverseSession(context, agentId, params.sessionId)
-      const response = await createTerminal.call(terminal, params)
-      terminalOwners.set(response.terminalId, params.sessionId)
-      return response
-    }
-    client.terminalOutput = async (params) => {
-      requireReverseSession(context, agentId, params.sessionId)
-      requireTerminalOwner(params.sessionId, params.terminalId)
-      return terminalOutput.call(terminal, params)
-    }
-    client.waitForTerminalExit = async (params) => {
-      requireReverseSession(context, agentId, params.sessionId)
-      requireTerminalOwner(params.sessionId, params.terminalId)
-      return waitForTerminalExit.call(terminal, params)
-    }
-    client.killTerminal = async (params) => {
-      requireReverseSession(context, agentId, params.sessionId)
-      requireTerminalOwner(params.sessionId, params.terminalId)
-      return killTerminal.call(terminal, params)
-    }
-    client.releaseTerminal = async (params) => {
-      requireReverseSession(context, agentId, params.sessionId)
-      requireTerminalOwner(params.sessionId, params.terminalId)
-      const response = await releaseTerminal.call(terminal, params)
-      terminalOwners.delete(params.terminalId)
-      return response
-    }
+    client
+      .onRequest(methods.client.terminal.create, async ({ params }) => {
+        requireReverseSession(context, agentId, params.sessionId)
+        const response = await create.call(terminal, params)
+        terminalOwners.set(response.terminalId, params.sessionId)
+        return response
+      })
+      .onRequest(methods.client.terminal.output, ({ params }) => {
+        requireReverseSession(context, agentId, params.sessionId)
+        requireTerminalOwner(params.sessionId, params.terminalId)
+        return output.call(terminal, params)
+      })
+      .onRequest(methods.client.terminal.waitForExit, ({ params }) => {
+        requireReverseSession(context, agentId, params.sessionId)
+        requireTerminalOwner(params.sessionId, params.terminalId)
+        return wait.call(terminal, params)
+      })
+      .onRequest(methods.client.terminal.kill, ({ params }) => {
+        requireReverseSession(context, agentId, params.sessionId)
+        requireTerminalOwner(params.sessionId, params.terminalId)
+        return kill.call(terminal, params)
+      })
+      .onRequest(methods.client.terminal.release, async ({ params }) => {
+        requireReverseSession(context, agentId, params.sessionId)
+        requireTerminalOwner(params.sessionId, params.terminalId)
+        const response = await release.call(terminal, params)
+        terminalOwners.delete(params.terminalId)
+        return response
+      })
   }
   return client
 }

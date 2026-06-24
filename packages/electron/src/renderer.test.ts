@@ -10,7 +10,7 @@ import {
 } from './test-support.ts'
 import { wireEndpointToPort } from './wire.ts'
 
-import type { TransportLifecycleEvent } from '@acpjs/protocol'
+import type { HostClientTransportLifecycleEvent } from '@acpjs/protocol'
 
 test('connect acquires a port and reports connecting then connected', async () => {
   const rig = await connectedRig()
@@ -27,7 +27,7 @@ test('connect rejects and reports closed lifecycle when handshake fails', async 
       throw new Error('contextIsolation must be enabled')
     },
   })
-  const lifecycle: TransportLifecycleEvent[] = []
+  const lifecycle: HostClientTransportLifecycleEvent[] = []
   await expect(
     transport.connect({
       onInboundRequest() {},
@@ -58,20 +58,20 @@ test('second connect is rejected', async () => {
   await rig.transport.close()
 })
 
-test('request round-trips an rpc envelope to the endpoint', async () => {
+test('request round-trips a host adapter envelope to the endpoint', async () => {
   const rig = await connectedRig()
   const response = await rig.transport.request({
-    id: 'rpc-1',
+    id: 'host-1',
     method: 'sessions/create',
     params: { cwd: '/tmp' },
   })
   expect(response).toEqual({
-    id: 'rpc-1',
+    id: 'host-1',
     ok: true,
     result: { echo: 'sessions/create' },
   })
   expect(rig.fake.requests).toEqual([
-    { id: 'rpc-1', method: 'sessions/create', params: { cwd: '/tmp' } },
+    { id: 'host-1', method: 'sessions/create', params: { cwd: '/tmp' } },
   ])
   await rig.transport.close()
 })
@@ -79,26 +79,36 @@ test('request round-trips an rpc envelope to the endpoint', async () => {
 test('concurrent requests resolve to their own responses by id', async () => {
   const rig = await connectedRig()
   const [first, second] = await Promise.all([
-    rig.transport.request({ id: 'rpc-1', method: 'a', params: {} }),
-    rig.transport.request({ id: 'rpc-2', method: 'b', params: {} }),
+    rig.transport.request({
+      id: 'host-1',
+      method: 'sessions/list',
+      params: {},
+    }),
+    rig.transport.request({ id: 'host-2', method: 'agents/list', params: {} }),
   ])
-  expect(first).toMatchObject({ id: 'rpc-1', result: { echo: 'a' } })
-  expect(second).toMatchObject({ id: 'rpc-2', result: { echo: 'b' } })
+  expect(first).toMatchObject({
+    id: 'host-1',
+    result: { echo: 'sessions/list' },
+  })
+  expect(second).toMatchObject({
+    id: 'host-2',
+    result: { echo: 'agents/list' },
+  })
   await rig.transport.close()
 })
 
-test('an endpoint request rejection resolves the rpc with an error envelope', async () => {
+test('an endpoint request rejection resolves with an adapter error envelope', async () => {
   const rig = await connectedRig()
   rig.fake.endpoint.request = async () => {
     throw new Error('endpoint broke')
   }
   const response = await rig.transport.request({
-    id: 'rpc-1',
-    method: 'm',
+    id: 'host-1',
+    method: 'sessions/prompt',
     params: {},
   })
   expect(response).toEqual({
-    id: 'rpc-1',
+    id: 'host-1',
     ok: false,
     error: {
       code: 'acpjs/agent-error',
@@ -112,7 +122,11 @@ test('an endpoint request rejection resolves the rpc with an error envelope', as
 test('payloads cross the port by structured clone, not by reference', async () => {
   const rig = await connectedRig()
   const params = { nested: { list: [1, 2, 3] } }
-  await rig.transport.request({ id: 'rpc-1', method: 'm', params })
+  await rig.transport.request({
+    id: 'host-1',
+    method: 'sessions/prompt',
+    params,
+  })
   expect(rig.fake.requests[0]?.params).toEqual(params)
   expect(rig.fake.requests[0]?.params).not.toBe(params)
   await rig.transport.close()
@@ -122,8 +136,8 @@ test('request with non-cloneable params rejects instead of hanging', async () =>
   const rig = await connectedRig()
   await expect(
     rig.transport.request({
-      id: 'rpc-1',
-      method: 'm',
+      id: 'host-1',
+      method: 'sessions/prompt',
       params: { fn() {} } as unknown as Record<string, unknown>,
     }),
   ).rejects.toThrowError()
@@ -196,8 +210,8 @@ test('a subscribe that throws on the endpoint stays isolated and keeps the port 
   await vi.waitFor(() => expect(rig.fake.subscriptions).toHaveLength(1))
   rig.fake.subscriptions[0]?.emit(makeEvent('s-1', 1))
   const response = await rig.transport.request({
-    id: 'rpc-1',
-    method: 'm',
+    id: 'host-1',
+    method: 'sessions/prompt',
     params: {},
   })
   expect(response.ok).toBe(true)
@@ -258,7 +272,11 @@ test('unsubscribe stops delivery and releases the endpoint subscription', async 
   unsubscribe()
   await vi.waitFor(() => expect(rig.fake.subscriptions[0]?.active).toBe(false))
   rig.fake.subscriptions[0]?.emit(makeEvent('s-1', 2))
-  await rig.transport.request({ id: 'rpc-flush', method: 'noop', params: {} })
+  await rig.transport.request({
+    id: 'host-flush',
+    method: 'sessions/cancel',
+    params: {},
+  })
   expect(received).toEqual([1])
   await rig.transport.close()
 })
@@ -320,17 +338,21 @@ test('close reports lifecycle closed, settles in-flight work, and is idempotent'
   const transport = electronTransport({
     requestPort: async () => channel.port2,
   })
-  const lifecycle: TransportLifecycleEvent[] = []
+  const lifecycle: HostClientTransportLifecycleEvent[] = []
   await transport.connect({
     onInboundRequest() {},
     onLifecycle: (event) => lifecycle.push(event),
   })
-  const pending = transport.request({ id: 'rpc-1', method: 'm', params: {} })
+  const pending = transport.request({
+    id: 'host-1',
+    method: 'sessions/prompt',
+    params: {},
+  })
   await vi.waitFor(() => expect(resolveRequest).toBeDefined())
   await transport.close()
   await transport.close()
   expect(await pending).toEqual({
-    id: 'rpc-1',
+    id: 'host-1',
     ok: false,
     error: {
       code: 'acpjs/transport-closed',
@@ -353,7 +375,11 @@ test('close reports lifecycle closed, settles in-flight work, and is idempotent'
   await expect(
     transport.respondInbound({ id: 'x', result: null }),
   ).rejects.toMatchObject({ code: 'acpjs/transport-closed' })
-  const late = await transport.request({ id: 'rpc-2', method: 'm', params: {} })
+  const late = await transport.request({
+    id: 'host-2',
+    method: 'sessions/prompt',
+    params: {},
+  })
   expect(late.ok).toBe(false)
 })
 
@@ -408,8 +434,8 @@ test('main-initiated detach closes the renderer transport', async () => {
     expect(rig.lifecycle.at(-1)).toEqual({ status: 'closed' }),
   )
   const response = await rig.transport.request({
-    id: 'rpc-1',
-    method: 'm',
+    id: 'host-1',
+    method: 'sessions/prompt',
     params: {},
   })
   expect(response.ok).toBe(false)

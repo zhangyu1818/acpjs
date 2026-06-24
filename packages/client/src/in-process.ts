@@ -1,29 +1,29 @@
 import {
-  ACP_ERROR_CODES,
+  ACPJS_ERROR_CODES,
   type EnvelopeEndpoint,
-  type Transport,
-  type TransportConnectionStatus,
-  type TransportHandlers,
+  type HostClientTransport,
+  type HostClientTransportConnectionStatus,
+  type HostClientTransportHandlers,
 } from '@acpjs/protocol'
 
 import { AcpClientError, transportClosedError } from './errors.ts'
 
 export function createInProcessTransport(
   endpoint: EnvelopeEndpoint,
-): Transport {
-  let status: TransportConnectionStatus = 'connecting'
-  let handlers: TransportHandlers | undefined
+): HostClientTransport {
+  let status: HostClientTransportConnectionStatus = 'connecting'
+  let handlers: HostClientTransportHandlers | undefined
   const unsubscribers = new Set<() => void>()
   let detachInbound: (() => void) | undefined
 
   return {
-    async connect(next: TransportHandlers): Promise<void> {
+    async connect(next: HostClientTransportHandlers): Promise<void> {
       if (status === 'closed') {
         throw new AcpClientError(transportClosedError())
       }
       if (handlers) {
         throw new AcpClientError({
-          code: ACP_ERROR_CODES.configInvalid,
+          code: ACPJS_ERROR_CODES.configInvalid,
           message: 'transport already connected',
           retryable: false,
         })

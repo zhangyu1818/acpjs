@@ -11,7 +11,7 @@ import {
   makeTmpDir,
 } from './test-support.ts'
 
-import type { AcpHostEvent } from '@acpjs/protocol'
+import type { AcpjsHostEvent } from '@acpjs/protocol'
 
 test('getIndex within the TTL serves the disk cache without refetching, across client instances', async () => {
   const cacheDir = await makeTmpDir()
@@ -60,7 +60,7 @@ test('getIndex falls back to the stale cache on network failure and emits a warn
     fetch: () => Promise.reject(new Error('offline')),
     now: () => nowMs,
   })
-  const events: AcpHostEvent[] = []
+  const events: AcpjsHostEvent[] = []
   client.subscribe((event) => events.push(event))
 
   const index = await client.getIndex()
@@ -107,7 +107,7 @@ test('getIndex skips unparseable entries with a diagnostic instead of failing th
     fetch: jsonFetch(makeIndex([badEntry, oddButValid])),
     now: () => 42,
   })
-  const events: AcpHostEvent[] = []
+  const events: AcpjsHostEvent[] = []
   client.subscribe((event) => events.push(event))
 
   const index = await client.getIndex()

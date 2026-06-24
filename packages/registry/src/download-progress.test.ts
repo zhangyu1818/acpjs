@@ -12,7 +12,7 @@ import {
   routedFetch,
 } from './test-support.ts'
 
-import type { AcpHostEvent, InstallProgressPayload } from '@acpjs/protocol'
+import type { AcpjsHostEvent, InstallProgressPayload } from '@acpjs/protocol'
 
 const noHit = () => Promise.resolve(undefined)
 
@@ -33,14 +33,16 @@ const rawEntry = {
 }
 
 function collect(client: {
-  subscribe(listener: (event: AcpHostEvent) => void): () => void
-}): AcpHostEvent[] {
-  const events: AcpHostEvent[] = []
+  subscribe(listener: (event: AcpjsHostEvent) => void): () => void
+}): AcpjsHostEvent[] {
+  const events: AcpjsHostEvent[] = []
   client.subscribe((event) => events.push(event))
   return events
 }
 
-function downloadingProgress(events: AcpHostEvent[]): InstallProgressPayload[] {
+function downloadingProgress(
+  events: AcpjsHostEvent[],
+): InstallProgressPayload[] {
   return events
     .filter((event) => event.type === 'install-progress')
     .map((event) => event.payload)

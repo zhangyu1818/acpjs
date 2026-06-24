@@ -1,11 +1,11 @@
 export type * from './domain'
 export type * from './events'
+export * from './host-methods'
 export * from './reduce'
 export type * from './snapshots'
 export * from './state'
 export * from './terminal-output'
 export * from './transport'
-export * from './wire'
 
 export type {
   AgentCapabilities,

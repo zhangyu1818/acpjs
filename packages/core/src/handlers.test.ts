@@ -21,11 +21,12 @@ import {
 import {
   collectEvents,
   fixtureDefinition,
+  rejectionOf,
   sessionParams,
   trackHost,
 } from './test-harness.ts'
 
-import type { AcpSessionEvent } from '@acpjs/protocol'
+import type { AcpjsSessionEvent } from '@acpjs/protocol'
 
 const sessionId = 'sess-handlers'
 
@@ -301,7 +302,7 @@ test('agent-driven fs and injected terminal round trips succeed end to end', asy
   expect(await readFile(target, 'utf8')).toBe('from agent')
 })
 
-test('host without an injected terminal handler rejects agent terminal calls', async () => {
+test('host without an injected terminal handler reports terminal methods as unavailable', async () => {
   const host = trackHost(createAcpHost())
   const { definition } = await fixtureDefinition(
     {
@@ -324,9 +325,11 @@ test('host without an injected terminal handler rejects agent terminal calls', a
   const agent = await host.spawnAgent(definition)
   const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
-  const result = await host.prompt('sess-term', [{ type: 'text', text: 'go' }])
+  const error = await rejectionOf(
+    host.prompt('sess-term', [{ type: 'text', text: 'go' }]),
+  )
 
-  expect(result.error).toMatchObject({ code: -32603 })
+  expect(error).toMatchObject({ code: -32601 })
 })
 
 test('an injected terminal handler does not broadcast terminal-output events', async () => {
@@ -350,7 +353,10 @@ test('an injected terminal handler does not broadcast terminal-output events', a
   const agent = await host.spawnAgent(definition)
   const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
   if (created.status !== 'active') throw new Error('expected active')
-  const events = collectEvents(host, 'sess-term-injected') as AcpSessionEvent[]
+  const events = collectEvents(
+    host,
+    'sess-term-injected',
+  ) as AcpjsSessionEvent[]
   await host.prompt('sess-term-injected', [{ type: 'text', text: 'go' }])
 
   expect(events.some((event) => event.type === 'terminal-output')).toBe(false)

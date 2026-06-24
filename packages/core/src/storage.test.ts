@@ -19,7 +19,7 @@ import {
   waitFor,
 } from './test-harness.ts'
 
-import type { AcpEvent, AcpSessionEvent } from '@acpjs/protocol'
+import type { AcpjsEvent, AcpjsSessionEvent } from '@acpjs/protocol'
 
 async function runSession(storage: StorageAdapter) {
   const host = trackHost(createAcpHost({ storage }))
@@ -163,7 +163,7 @@ test('closeSession waits for the JSONL tombstone meta before returning', async (
 })
 
 test('appendMeta write failure produces a diagnostic without breaking the live stream (INV-5)', async () => {
-  const events: AcpSessionEvent[] = []
+  const events: AcpjsSessionEvent[] = []
   const storage: StorageAdapter = {
     appendEvent() {},
     appendMeta() {
@@ -181,7 +181,7 @@ test('appendMeta write failure produces a diagnostic without breaking the live s
   const agent = await host.spawnAgent(definition)
   await host.createSession(agent.agentId, sessionParams('/tmp'))
   host.subscribe('sess-meta-fail', 0, (event) =>
-    events.push(event as AcpSessionEvent),
+    events.push(event as AcpjsSessionEvent),
   )
 
   expect(events.length).toBeGreaterThan(0)
@@ -208,7 +208,7 @@ test('a storage adapter that throws does not affect the live stream and yields d
   }
   const { host, events } = await runSession(storage)
 
-  expect((events as AcpSessionEvent[]).map((event) => event.type)).toContain(
+  expect((events as AcpjsSessionEvent[]).map((event) => event.type)).toContain(
     'agent-message-chunk',
   )
   const seqs = events.map((event) => event.seq)
@@ -271,9 +271,9 @@ test('JSONL storage persists events and a fresh host rebuilds the session as dis
     },
   ])
   const replayed = collectEvents(rebuilt, 'sess-store')
-  const sessionEvents = events as AcpSessionEvent[]
+  const sessionEvents = events as AcpjsSessionEvent[]
   expect(replayed.slice(0, sessionEvents.length)).toEqual(sessionEvents)
-  const last = replayed.at(-1) as AcpSessionEvent
+  const last = replayed.at(-1) as AcpjsSessionEvent
   expect(last.type).toBe('session-status-change')
   expect(last.payload).toEqual({ status: 'disconnected' })
   const seqs = replayed.map((event) => event.seq)
@@ -337,7 +337,7 @@ test('JSONL restore backfills cwd and agentDefinitionId and loadSession requires
 })
 
 test('restoreSessions drops unserializable stored events with a diagnostic', async () => {
-  const poisoned: AcpEvent = {
+  const poisoned: AcpjsEvent = {
     sessionId: 'sess-poison',
     seq: 1,
     ts: 0,
@@ -348,7 +348,7 @@ test('restoreSessions drops unserializable stored events with a diagnostic', asy
     ...poisoned,
     seq: 2,
     payload: { content: () => 'not cloneable' },
-  } as unknown as AcpEvent
+  } as unknown as AcpjsEvent
   const storage: StorageAdapter = {
     appendEvent() {},
     appendMeta() {},
@@ -371,7 +371,7 @@ test('restoreSessions drops unserializable stored events with a diagnostic', asy
       additionalDirectories: [],
     },
   ])
-  const replayed = collectEvents(host, 'sess-poison') as AcpSessionEvent[]
+  const replayed = collectEvents(host, 'sess-poison') as AcpjsSessionEvent[]
   expect(replayed.map((event) => event.type)).toEqual([
     'agent-message-chunk',
     'session-status-change',
@@ -403,7 +403,7 @@ test('memory storage is the default and supports listSessions/loadEvents', async
 })
 
 test('restoreSessions publishes session-updated projections for rebuilt disconnected sessions', async () => {
-  const stored: AcpEvent = {
+  const stored: AcpjsEvent = {
     sessionId: 'sess-restored',
     seq: 1,
     ts: 0,

@@ -2,10 +2,17 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 
 import {
-  ClientSideConnection,
+  client as createClientApp,
+  methods,
   ndJsonStream,
   PROTOCOL_VERSION,
+  type AgentNotificationMethod,
+  type AgentNotificationParamsByMethod,
+  type AgentRequestMethod,
+  type AgentRequestParamsByMethod,
+  type AgentRequestResponsesByMethod,
   type Client,
+  type ClientConnection,
   type SessionNotification,
 } from '@agentclientprotocol/sdk'
 import { afterEach } from 'vitest'
@@ -31,6 +38,124 @@ export function trackChild<T extends ChildProcess>(child: T): T {
   return child
 }
 
+function createFixtureConnection(connection: ClientConnection) {
+  const request = <Method extends AgentRequestMethod>(
+    method: Method,
+    params: AgentRequestParamsByMethod[Method],
+  ): Promise<AgentRequestResponsesByMethod[Method]> =>
+    connection.agent.request(method, params)
+  const notify = <Method extends AgentNotificationMethod>(
+    method: Method,
+    params: AgentNotificationParamsByMethod[Method],
+  ): Promise<void> => connection.agent.notify(method, params)
+
+  return {
+    signal: connection.signal,
+    closed: connection.closed,
+    close: (error?: unknown) => connection.close(error),
+    initialize: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.initialize],
+    ) => request(methods.agent.initialize, params),
+    newSession: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.session.new],
+    ) => request(methods.agent.session.new, params),
+    authenticate: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.authenticate],
+    ) => request(methods.agent.authenticate, params),
+    loadSession: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.session.load],
+    ) => request(methods.agent.session.load, params),
+    listSessions: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.session.list],
+    ) => request(methods.agent.session.list, params),
+    resumeSession: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.session.resume],
+    ) => request(methods.agent.session.resume, params),
+    closeSession: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.session.close],
+    ) => request(methods.agent.session.close, params),
+    deleteSession: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.session.delete],
+    ) => request(methods.agent.session.delete, params),
+    logout: (params: AgentRequestParamsByMethod[typeof methods.agent.logout]) =>
+      request(methods.agent.logout, params),
+    setSessionMode: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.session.setMode],
+    ) => request(methods.agent.session.setMode, params),
+    setSessionConfigOption: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.session.setConfigOption],
+    ) => request(methods.agent.session.setConfigOption, params),
+    prompt: (
+      params: AgentRequestParamsByMethod[typeof methods.agent.session.prompt],
+    ) => request(methods.agent.session.prompt, params),
+    cancel: (
+      params: AgentNotificationParamsByMethod[typeof methods.agent.session.cancel],
+    ) => notify(methods.agent.session.cancel, params),
+  }
+}
+
+function buildClientApp(
+  updates: SessionNotification[],
+  overrides: Partial<Client>,
+) {
+  const app = createClientApp({ name: '@acpjs/fixture-agent-tests' })
+    .onNotification(methods.client.session.update, async ({ params }) => {
+      updates.push(params)
+      await overrides.sessionUpdate?.(params)
+    })
+    .onRequest(methods.client.session.requestPermission, ({ params }) => {
+      return (
+        overrides.requestPermission?.(params) ?? {
+          outcome: { outcome: 'cancelled' },
+        }
+      )
+    })
+
+  const readTextFile = overrides.readTextFile
+  if (readTextFile) {
+    app.onRequest(methods.client.fs.readTextFile, ({ params }) =>
+      readTextFile(params),
+    )
+  }
+  const writeTextFile = overrides.writeTextFile
+  if (writeTextFile) {
+    app.onRequest(methods.client.fs.writeTextFile, ({ params }) =>
+      writeTextFile(params),
+    )
+  }
+  const createTerminal = overrides.createTerminal
+  if (createTerminal) {
+    app.onRequest(methods.client.terminal.create, ({ params }) =>
+      createTerminal(params),
+    )
+  }
+  const terminalOutput = overrides.terminalOutput
+  if (terminalOutput) {
+    app.onRequest(methods.client.terminal.output, ({ params }) =>
+      terminalOutput(params),
+    )
+  }
+  const waitForTerminalExit = overrides.waitForTerminalExit
+  if (waitForTerminalExit) {
+    app.onRequest(methods.client.terminal.waitForExit, ({ params }) =>
+      waitForTerminalExit(params),
+    )
+  }
+  const killTerminal = overrides.killTerminal
+  if (killTerminal) {
+    app.onRequest(methods.client.terminal.kill, ({ params }) =>
+      killTerminal(params),
+    )
+  }
+  const releaseTerminal = overrides.releaseTerminal
+  if (releaseTerminal) {
+    app.onRequest(methods.client.terminal.release, ({ params }) =>
+      releaseTerminal(params),
+    )
+  }
+  return app
+}
+
 export function connectFixture(
   args: string[],
   overrides: Partial<Client> = {},
@@ -43,21 +168,12 @@ export function connectFixture(
     }),
   )
   const updates: SessionNotification[] = []
-  const client: Client = {
-    async sessionUpdate(params) {
-      updates.push(params)
-    },
-    async requestPermission() {
-      return { outcome: { outcome: 'cancelled' } }
-    },
-    ...overrides,
-  }
   const stream = ndJsonStream(
     Writable.toWeb(child.stdin),
     Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
   )
-  const conn = new ClientSideConnection(() => client, stream)
-  return { child, conn, updates }
+  const connection = buildClientApp(updates, overrides).connect(stream)
+  return { child, conn: createFixtureConnection(connection), updates }
 }
 
 export async function spawnFixture(

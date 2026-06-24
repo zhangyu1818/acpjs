@@ -5,17 +5,17 @@ import { AcpClientError, createInProcessTransport } from './index.ts'
 import type {
   EnvelopeEndpoint,
   InboundRequest,
-  TransportLifecycleEvent,
-  TransportSubscribeParams,
+  HostClientTransportLifecycleEvent,
+  HostClientTransportSubscribeParams,
 } from '@acpjs/protocol'
 
 function stubEndpoint(): {
   endpoint: EnvelopeEndpoint
   pushInbound: (request: InboundRequest) => void
-  active: Set<TransportSubscribeParams>
+  active: Set<HostClientTransportSubscribeParams>
 } {
   const inboundHandlers = new Set<(request: InboundRequest) => void>()
-  const active = new Set<TransportSubscribeParams>()
+  const active = new Set<HostClientTransportSubscribeParams>()
   return {
     endpoint: {
       async request(request) {
@@ -41,7 +41,7 @@ function stubEndpoint(): {
 test('the in-process transport reports connecting then connected and delegates envelopes', async () => {
   const { endpoint, pushInbound } = stubEndpoint()
   const transport = createInProcessTransport(endpoint)
-  const lifecycle: TransportLifecycleEvent[] = []
+  const lifecycle: HostClientTransportLifecycleEvent[] = []
   const inbound: InboundRequest[] = []
 
   await transport.connect({
@@ -96,7 +96,7 @@ test('connecting an already connected transport throws acpjs/config-invalid', as
 test('close tears down subscriptions, reports closed and fails later envelopes', async () => {
   const { endpoint, pushInbound, active } = stubEndpoint()
   const transport = createInProcessTransport(endpoint)
-  const lifecycle: TransportLifecycleEvent[] = []
+  const lifecycle: HostClientTransportLifecycleEvent[] = []
   const inbound: InboundRequest[] = []
   await transport.connect({
     onInboundRequest: (request) => inbound.push(request),

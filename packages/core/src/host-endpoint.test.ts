@@ -13,7 +13,7 @@ import {
 } from './test-harness.ts'
 
 import type { FixtureScenario } from '@acpjs/fixture-agent'
-import type { AcpEvent, InboundRequest, RpcResponse } from '@acpjs/protocol'
+import type { AcpjsEvent, InboundRequest, HostResponse } from '@acpjs/protocol'
 
 const PERMISSION_SCENARIO: FixtureScenario = {
   turns: [
@@ -63,7 +63,7 @@ async function spawnAndCreate(scenario: FixtureScenario) {
   return { host, endpoint, agentId, sessionId, spawned, created }
 }
 
-test('the endpoint maps envelope requests onto host methods and answers with RpcResponse', async () => {
+test('the endpoint maps envelope requests onto host methods and answers with HostResponse', async () => {
   const { endpoint, sessionId, spawned, created } = await spawnAndCreate({
     turns: [
       {
@@ -87,7 +87,7 @@ test('the endpoint maps envelope requests onto host methods and answers with Rpc
     result: { status: 'active', sessionId },
   })
 
-  const events: AcpEvent[] = []
+  const events: AcpjsEvent[] = []
   endpoint.subscribe({ sessionId, fromSeq: 0 }, (event) => events.push(event))
 
   const prompted = await endpoint.request({
@@ -139,7 +139,48 @@ test('host errors cross the envelope as typed ErrorObject responses', async () =
   })
 })
 
-test('requests missing required params are rejected with acpjs/config-invalid at the envelope boundary', async () => {
+test('prompt protocol errors cross the adapter as acpjs/agent-error responses', async () => {
+  const { host, endpoint, sessionId } = await spawnAndCreate({
+    turns: [
+      {
+        steps: [
+          { kind: 'error', code: -32603, message: 'boom', data: { x: 1 } },
+        ],
+      },
+    ],
+  })
+
+  const prompted = await endpoint.request({
+    id: 'r-prompt-error',
+    method: 'sessions/prompt',
+    params: { sessionId, prompt: [{ type: 'text', text: 'go' }] },
+  })
+
+  expect(prompted).toEqual({
+    id: 'r-prompt-error',
+    ok: false,
+    error: {
+      code: 'acpjs/agent-error',
+      message: 'boom',
+      data: { code: -32603, message: 'boom', data: { x: 1 } },
+      retryable: false,
+    },
+  })
+  expect(host.getSession(sessionId)?.status).toBe('active')
+  await expect(
+    endpoint.request({
+      id: 'r-prompt-retry',
+      method: 'sessions/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'retry' }] },
+    }),
+  ).resolves.toEqual({
+    id: 'r-prompt-retry',
+    ok: true,
+    result: { stopReason: 'end_turn' },
+  })
+})
+
+test('requests missing required params are rejected with acpjs/config-invalid at the adapter boundary', async () => {
   const { endpoint } = await spawnAndCreate({})
 
   const cases: { method: string; params: Record<string, unknown> }[] = [
@@ -199,7 +240,7 @@ test('pending permissions are forwarded as inbound requests and answered via res
     id: inbound[0]?.id ?? '',
     result: { outcome: 'selected', optionId: 'opt-allow' },
   })
-  const prompted: RpcResponse = await prompting
+  const prompted: HostResponse = await prompting
   expect(prompted).toMatchObject({
     ok: true,
     result: { stopReason: 'end_turn' },
@@ -216,7 +257,7 @@ test('pending permissions are forwarded as inbound requests and answered via res
 test('a throwing inbound handler is isolated and reported as a subscriber/error diagnostic', async () => {
   const { host, endpoint, sessionId } =
     await spawnAndCreate(PERMISSION_SCENARIO)
-  const hostEvents: AcpEvent[] = []
+  const hostEvents: AcpjsEvent[] = []
   host.subscribe(undefined, 0, (event) => hostEvents.push(event))
   const inbound: InboundRequest[] = []
   endpoint.onInboundRequest(() => {
@@ -249,7 +290,7 @@ test('a throwing inbound handler is isolated and reported as a subscriber/error 
 
 test('a handler attached after the permission was created still receives it while pending', async () => {
   const { endpoint, sessionId } = await spawnAndCreate(PERMISSION_SCENARIO)
-  const events: AcpEvent[] = []
+  const events: AcpjsEvent[] = []
   endpoint.subscribe({ sessionId, fromSeq: 0 }, (event) => events.push(event))
 
   const prompting = endpoint.request({
@@ -264,6 +305,41 @@ test('a handler attached after the permission was created still receives it whil
   const inbound: InboundRequest[] = []
   endpoint.onInboundRequest((request) => inbound.push(request))
   expect(inbound).toHaveLength(1)
+
+  await endpoint.respondInbound({
+    id: inbound[0]?.id ?? '',
+    result: { outcome: 'cancelled' },
+  })
+  await prompting
+})
+
+test('a reattached inbound handler receives permissions that are still pending', async () => {
+  const { endpoint, sessionId } = await spawnAndCreate(PERMISSION_SCENARIO)
+  const events: AcpjsEvent[] = []
+  endpoint.subscribe({ sessionId, fromSeq: 0 }, (event) => events.push(event))
+  const inbound: InboundRequest[] = []
+  const retained: InboundRequest[] = []
+  endpoint.onInboundRequest((request) => retained.push(request))
+  const handler = (request: InboundRequest): void => {
+    inbound.push(request)
+  }
+  const unsubscribe = endpoint.onInboundRequest(handler)
+
+  const prompting = endpoint.request({
+    id: 'r-prompt',
+    method: 'sessions/prompt',
+    params: { sessionId, prompt: [{ type: 'text', text: 'go' }] },
+  })
+  await waitFor(() =>
+    events.some((event) => event.type === 'permission-request-created'),
+  )
+  expect(inbound).toHaveLength(1)
+  expect(retained).toHaveLength(1)
+
+  unsubscribe()
+  endpoint.onInboundRequest(handler)
+  expect(inbound).toHaveLength(2)
+  expect(retained).toHaveLength(1)
 
   await endpoint.respondInbound({
     id: inbound[0]?.id ?? '',
@@ -327,7 +403,7 @@ test('non-AcpError failures map to acpjs/agent-error envelopes, protocol errors 
 })
 
 test('discovery queries sessions/getAll, agents/list and sessions/restore round-trip through the endpoint', async () => {
-  const stored: AcpEvent = {
+  const stored: AcpjsEvent = {
     sessionId: 'sess-old',
     seq: 1,
     ts: 0,

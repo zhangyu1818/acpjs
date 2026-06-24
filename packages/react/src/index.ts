@@ -9,8 +9,8 @@ export { useSessions } from './use-sessions.ts'
 export { shallowEqual } from './shallow-equal.ts'
 export type { DiagnosticEvent, PermissionRequest } from '@acpjs/client'
 export type {
-  AgentSnapshotWire,
-  SessionSnapshotWire,
+  AgentSnapshot,
+  SessionSnapshot,
   SessionState,
 } from '@acpjs/protocol'
 export type { ConnectionStatusSnapshot } from '@acpjs/client'

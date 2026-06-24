@@ -6,8 +6,8 @@ import {
 } from './internal.ts'
 
 import type {
-  AcpEventExtensions,
-  AcpSessionEvent,
+  AcpjsEventExtensions,
+  AcpjsSessionEvent,
   CreateOrLoadSessionParams,
 } from '@acpjs/protocol'
 
@@ -16,9 +16,9 @@ import type { SessionManager } from './session-manager.ts'
 function pushDraftEvent(
   manager: SessionManager,
   session: SessionHandle,
-  type: AcpSessionEvent['type'],
+  type: AcpjsSessionEvent['type'],
   payload: unknown,
-  extensions?: AcpEventExtensions,
+  extensions?: AcpjsEventExtensions,
 ): void {
   const event = {
     sessionId: session.sessionId,
@@ -27,7 +27,7 @@ function pushDraftEvent(
     type,
     payload,
     ...(extensions ? { extensions } : {}),
-  } as AcpSessionEvent
+  } as AcpjsSessionEvent
   if (!isStructuredCloneable(event)) {
     manager.bus.diagnostic('error', 'event/unserializable', {
       message: `rejected unserializable ${type} event`,

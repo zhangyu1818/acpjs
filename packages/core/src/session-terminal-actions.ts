@@ -1,4 +1,5 @@
-import { ACP_ERROR_CODES } from '@acpjs/protocol'
+import { ACPJS_ERROR_CODES } from '@acpjs/protocol'
+import { methods } from '@agentclientprotocol/sdk'
 
 import { AcpError } from './errors.ts'
 import { capabilityEnabled, type SessionHandle } from './internal.ts'
@@ -34,7 +35,9 @@ async function cancelPromptIfNeeded(
     const { handle, conn } = manager.runtime.requireReady(session.agentId)
     await manager.runtime.track(
       handle,
-      conn.cancel({ sessionId: session.sessionId }),
+      conn.agent.notify(methods.agent.session.cancel, {
+        sessionId: session.sessionId,
+      }),
     )
   } catch (error) {
     reportLifecycleCleanupFailure(
@@ -59,7 +62,7 @@ function beginTerminalLifecycle(
     session.lifecycleOperation === 'delete'
   ) {
     throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
+      ACPJS_ERROR_CODES.configInvalid,
       `session ${session.sessionId} lifecycle operation in progress`,
     )
   }
@@ -67,14 +70,6 @@ function beginTerminalLifecycle(
     manager.invalidateLifecycle(session)
   }
   return manager.beginLifecycle(session, operation)
-}
-
-function restoredStatus(
-  previousStatus: SessionHandle['status'],
-): SessionHandle['status'] {
-  return previousStatus === 'prompting' || previousStatus === 'resuming'
-    ? 'active'
-    : previousStatus
 }
 
 export async function closeManagedSession(
@@ -91,7 +86,7 @@ export async function closeManagedSession(
     await manager.bus.commitMeta(sessionMeta(session, 'closed'))
     if (!manager.isCurrentLifecycle(session, 'close', operationId)) {
       throw new AcpError(
-        ACP_ERROR_CODES.sessionClosed,
+        ACPJS_ERROR_CODES.sessionClosed,
         `session ${sessionId} is no longer active`,
       )
     }
@@ -100,8 +95,11 @@ export async function closeManagedSession(
     manager.bus.setSessionStatus(session, 'closed')
   } catch (error) {
     manager.endLifecycle(session, operationId)
-    if (session.status === 'prompting' || session.status === 'resuming') {
-      manager.bus.setSessionStatus(session, restoredStatus(previousStatus))
+    if (
+      (session.status === 'prompting' || session.status === 'resuming') &&
+      session.status !== previousStatus
+    ) {
+      manager.bus.setSessionStatus(session, previousStatus)
     }
     throw error
   }
@@ -109,7 +107,10 @@ export async function closeManagedSession(
     const { handle, conn } = manager.runtime.requireReady(session.agentId)
     if (capabilityEnabled(handle.capabilities?.sessionCapabilities?.close)) {
       void manager.runtime
-        .track(handle, conn.closeSession({ sessionId }))
+        .track(
+          handle,
+          conn.agent.request(methods.agent.session.close, { sessionId }),
+        )
         .catch((error: unknown) =>
           reportLifecycleCleanupFailure(manager, 'session/close-failed', {
             ...(session.agentId === undefined
@@ -141,7 +142,7 @@ export async function deleteManagedSession(
   const publicSession = manager.sessions.get(sessionId)
   if (session && !sameAgentOrUnknown(session, agentId)) {
     throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
+      ACPJS_ERROR_CODES.configInvalid,
       `session ${sessionId} belongs to another agent`,
     )
   }
@@ -159,7 +160,7 @@ export async function deleteManagedSession(
           : manager.isCurrentLifecycle(session, 'delete', operationId)
       if (!current) {
         throw new AcpError(
-          ACP_ERROR_CODES.sessionClosed,
+          ACPJS_ERROR_CODES.sessionClosed,
           `session ${sessionId} is no longer active`,
         )
       }
@@ -176,9 +177,10 @@ export async function deleteManagedSession(
       manager.endLifecycle(session, operationId)
       if (
         publicSession !== undefined &&
-        (session.status === 'prompting' || session.status === 'resuming')
+        (session.status === 'prompting' || session.status === 'resuming') &&
+        session.status !== previousStatus
       ) {
-        manager.bus.setSessionStatus(session, restoredStatus(previousStatus))
+        manager.bus.setSessionStatus(session, previousStatus)
       }
       throw error
     }
@@ -190,7 +192,10 @@ export async function deleteManagedSession(
     const { handle, conn } = manager.runtime.requireReady(agentId)
     if (capabilityEnabled(handle.capabilities?.sessionCapabilities?.delete)) {
       void manager.runtime
-        .track(handle, conn.deleteSession({ sessionId }))
+        .track(
+          handle,
+          conn.agent.request(methods.agent.session.delete, { sessionId }),
+        )
         .catch((error: unknown) =>
           reportLifecycleCleanupFailure(manager, 'session/delete-failed', {
             agentId,

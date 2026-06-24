@@ -1,8 +1,8 @@
 import {
-  ACP_ERROR_CODES,
-  type AcpEvent,
-  type AcpEventExtensions,
-  type AcpSessionEvent,
+  ACPJS_ERROR_CODES,
+  type AcpjsEvent,
+  type AcpjsEventExtensions,
+  type AcpjsSessionEvent,
   type AgentExitReason,
   type AgentStatus,
   type SessionStatus,
@@ -15,7 +15,7 @@ import type { ChildProcess } from 'node:child_process'
 import type {
   AgentCapabilities,
   AuthMethod,
-  ClientSideConnection,
+  ClientConnection,
   ContentBlock,
   McpServer,
   PermissionOption,
@@ -25,12 +25,12 @@ import type {
 
 import type { ResolvedAgentDefinition } from './options.ts'
 
-export type EventSubscriber = (event: AcpEvent) => void
+export type EventSubscriber = (event: AcpjsEvent) => void
 
 export interface BufferedSessionEvent {
-  type: AcpSessionEvent['type']
+  type: AcpjsSessionEvent['type']
   payload: unknown
-  extensions?: AcpEventExtensions
+  extensions?: AcpjsEventExtensions
 }
 
 export interface ClientPromptEcho {
@@ -47,7 +47,7 @@ export interface AgentHandle {
   authMethods: AuthMethod[] | undefined
   restartCount: number
   proc: ChildProcess | undefined
-  conn: ClientSideConnection | undefined
+  conn: ClientConnection | undefined
   pendingRejects: Set<() => void>
   restartTimer: ReturnType<typeof setTimeout> | undefined
   disposed: boolean
@@ -66,7 +66,7 @@ export interface SessionHandle {
   loadReplay?: BufferedSessionEvent[]
   title?: string | null
   updatedAt?: string | null
-  log: AcpSessionEvent[]
+  log: AcpjsSessionEvent[]
   nextSeq: number
   hasModes: boolean
   hasConfigOptions: boolean
@@ -126,11 +126,11 @@ export function capabilityEnabled(value: unknown): boolean {
 export function requireReadyAgent(
   agents: Map<string, AgentHandle>,
   agentId: string | undefined,
-): { handle: AgentHandle; conn: ClientSideConnection } {
+): { handle: AgentHandle; conn: ClientConnection } {
   const handle = agentId === undefined ? undefined : agents.get(agentId)
   if (handle?.status !== 'ready' || !handle.conn) {
     throw new AcpError(
-      ACP_ERROR_CODES.agentExited,
+      ACPJS_ERROR_CODES.agentExited,
       `agent ${agentId ?? '(none)'} is not ready`,
     )
   }
@@ -145,7 +145,7 @@ export async function trackAgentPromise<T>(
     const rejectExited = () => {
       rejectPromise(
         new AcpError(
-          ACP_ERROR_CODES.agentExited,
+          ACPJS_ERROR_CODES.agentExited,
           `agent ${handle.agentId} exited`,
         ),
       )

@@ -2,14 +2,14 @@ import { electronTransport } from './renderer.ts'
 import { wireEndpointToPort, type WirePort } from './wire.ts'
 
 import type {
-  AcpEvent,
+  AcpjsEvent,
   EnvelopeEndpoint,
   InboundRequest,
-  RpcRequest,
-  Transport,
-  TransportHandlers,
-  TransportLifecycleEvent,
-  TransportSubscribeParams,
+  HostRequest,
+  HostClientTransport,
+  HostClientTransportHandlers,
+  HostClientTransportLifecycleEvent,
+  HostClientTransportSubscribeParams,
 } from '@acpjs/protocol'
 
 export function asWirePort(port: MessagePort): WirePort {
@@ -28,22 +28,22 @@ export function asWirePort(port: MessagePort): WirePort {
   }
 }
 
-export function makeEvent(sessionId: string, seq: number): AcpEvent {
+export function makeEvent(sessionId: string, seq: number): AcpjsEvent {
   return {
     sessionId,
     seq,
     ts: 1,
     type: 'agent-message-chunk',
     payload: { content: { type: 'text', text: `chunk-${seq}` } },
-  } as unknown as AcpEvent
+  } as unknown as AcpjsEvent
 }
 
 export interface FakeEndpoint {
   endpoint: EnvelopeEndpoint
-  requests: RpcRequest[]
+  requests: HostRequest[]
   subscriptions: {
-    params: TransportSubscribeParams
-    emit: (event: AcpEvent) => void
+    params: HostClientTransportSubscribeParams
+    emit: (event: AcpjsEvent) => void
     active: boolean
   }[]
   inboundResponses: unknown[]
@@ -52,7 +52,7 @@ export interface FakeEndpoint {
 }
 
 export function fakeEndpoint(): FakeEndpoint {
-  const requests: RpcRequest[] = []
+  const requests: HostRequest[] = []
   const subscriptions: FakeEndpoint['subscriptions'] = []
   const inboundResponses: unknown[] = []
   const inboundHandlers = new Set<(request: InboundRequest) => void>()
@@ -67,7 +67,7 @@ export function fakeEndpoint(): FakeEndpoint {
     subscribe(params, onEvent) {
       const record = {
         params,
-        emit(event: AcpEvent) {
+        emit(event: AcpjsEvent) {
           if (record.active) onEvent(event)
         },
         active: true,
@@ -99,9 +99,9 @@ export function fakeEndpoint(): FakeEndpoint {
 }
 
 export interface Rig {
-  transport: Transport
+  transport: HostClientTransport
   fake: FakeEndpoint
-  lifecycle: TransportLifecycleEvent[]
+  lifecycle: HostClientTransportLifecycleEvent[]
   inbound: InboundRequest[]
   detach: () => void
 }
@@ -113,7 +113,7 @@ export async function connectedRig(): Promise<Rig> {
   const transport = electronTransport({
     requestPort: async () => channel.port2,
   })
-  const lifecycle: TransportLifecycleEvent[] = []
+  const lifecycle: HostClientTransportLifecycleEvent[] = []
   const inbound: InboundRequest[] = []
   await transport.connect({
     onInboundRequest: (request) => inbound.push(request),
@@ -122,7 +122,7 @@ export async function connectedRig(): Promise<Rig> {
   return { transport, fake, lifecycle, inbound, detach }
 }
 
-export const noopHandlers: TransportHandlers = {
+export const noopHandlers: HostClientTransportHandlers = {
   onInboundRequest() {},
   onLifecycle() {},
 }

@@ -1,11 +1,11 @@
 import {
-  ACP_ERROR_CODES,
-  type AcpEvent,
+  ACPJS_ERROR_CODES,
+  type AcpjsEvent,
   type ErrorObject,
-  type RpcResponse,
-  type Transport,
-  type TransportHandlers,
-  type TransportSubscribeParams,
+  type HostResponse,
+  type HostClientTransport,
+  type HostClientTransportHandlers,
+  type HostClientTransportSubscribeParams,
 } from '@acpjs/protocol'
 
 import {
@@ -47,7 +47,7 @@ function closePort(port: MessagePort | undefined): void {
 
 function transportClosedError(): ErrorObject {
   return {
-    code: ACP_ERROR_CODES.transportClosed,
+    code: ACPJS_ERROR_CODES.transportClosed,
     message: 'transport is closed',
     retryable: true,
   }
@@ -96,19 +96,22 @@ function defaultRequestPort(): Promise<MessagePort> {
 
 export function electronTransport(
   options: ElectronTransportOptions = {},
-): Transport {
+): HostClientTransport {
   const requestPort = options.requestPort ?? defaultRequestPort
   let status: 'idle' | 'connecting' | 'connected' | 'closed' = 'idle'
-  let handlers: TransportHandlers | undefined
+  let handlers: HostClientTransportHandlers | undefined
   let port: MessagePort | undefined
-  const pendingRpcs = new Map<string, (response: RpcResponse) => void>()
+  const pendingRequests = new Map<string, (response: HostResponse) => void>()
   const pendingAcks = new Map<
     string,
     { resolve: () => void; reject: (error: Error) => void }
   >()
   const subscribers = new Map<
     string,
-    { params: TransportSubscribeParams; onEvent: (event: AcpEvent) => void }
+    {
+      params: HostClientTransportSubscribeParams
+      onEvent: (event: AcpjsEvent) => void
+    }
   >()
   let subCounter = 0
   let ackCounter = 0
@@ -124,10 +127,10 @@ export function electronTransport(
   function teardown(error?: ErrorObject): void {
     if (status === 'closed') return
     status = 'closed'
-    for (const [id, resolve] of pendingRpcs) {
+    for (const [id, resolve] of pendingRequests) {
       resolve({ id, ok: false, error: transportClosedError() })
     }
-    pendingRpcs.clear()
+    pendingRequests.clear()
     for (const pending of pendingAcks.values()) {
       pending.reject(makeTransportError(transportClosedError()))
     }
@@ -144,9 +147,9 @@ export function electronTransport(
     if (status !== 'connected') return
     const message = data as MainToRendererMessage
     switch (message.t) {
-      case 'rpc-result': {
-        const resolve = pendingRpcs.get(message.response.id)
-        pendingRpcs.delete(message.response.id)
+      case 'response': {
+        const resolve = pendingRequests.get(message.response.id)
+        pendingRequests.delete(message.response.id)
         resolve?.(message.response)
         break
       }
@@ -182,13 +185,13 @@ export function electronTransport(
   }
 
   return {
-    async connect(next: TransportHandlers): Promise<void> {
+    async connect(next: HostClientTransportHandlers): Promise<void> {
       if (status === 'closed') {
         throw makeTransportError(transportClosedError())
       }
       if (status !== 'idle') {
         throw makeTransportError({
-          code: ACP_ERROR_CODES.configInvalid,
+          code: ACPJS_ERROR_CODES.configInvalid,
           message: 'transport already connected',
           retryable: false,
         })
@@ -201,7 +204,7 @@ export function electronTransport(
         acquired = await requestPort()
       } catch (error) {
         const errorObject: ErrorObject = {
-          code: ACP_ERROR_CODES.transportClosed,
+          code: ACPJS_ERROR_CODES.transportClosed,
           message: error instanceof Error ? error.message : String(error),
           retryable: false,
         }
@@ -228,8 +231,8 @@ export function electronTransport(
         return { id: request.id, ok: false, error: transportClosedError() }
       }
       return new Promise((resolve) => {
-        send({ t: 'rpc', request })
-        pendingRpcs.set(request.id, resolve)
+        send({ t: 'request', request })
+        pendingRequests.set(request.id, resolve)
       })
     },
     subscribe(params, onEvent) {

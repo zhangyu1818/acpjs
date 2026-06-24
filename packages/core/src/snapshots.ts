@@ -1,10 +1,10 @@
-import type { AgentSnapshotWire, SessionSnapshotWire } from '@acpjs/protocol'
+import type { AgentSnapshot, SessionSnapshot } from '@acpjs/protocol'
 
 import type { AgentHandle, SessionHandle } from './internal.ts'
 
 function capabilitiesSnapshot(
   handle: AgentHandle,
-): AgentSnapshotWire['capabilities'] | undefined {
+): AgentSnapshot['capabilities'] | undefined {
   const capabilities = handle.capabilities
   if (capabilities === undefined) return undefined
   return {
@@ -27,7 +27,7 @@ function capabilitiesSnapshot(
   }
 }
 
-export function agentSnapshot(handle: AgentHandle): AgentSnapshotWire {
+export function agentSnapshot(handle: AgentHandle): AgentSnapshot {
   const capabilities = capabilitiesSnapshot(handle)
   return structuredClone({
     agentId: handle.agentId,
@@ -42,7 +42,7 @@ export function agentSnapshot(handle: AgentHandle): AgentSnapshotWire {
   })
 }
 
-export function sessionSnapshot(session: SessionHandle): SessionSnapshotWire {
+export function sessionSnapshot(session: SessionHandle): SessionSnapshot {
   return {
     sessionId: session.sessionId,
     status: session.status,

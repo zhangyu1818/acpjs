@@ -1,7 +1,7 @@
 import type {
-  AcpSessionEvent,
+  AcpjsSessionEvent,
   AgentDefinition,
-  AgentSnapshotWire,
+  AgentSnapshot,
   ContentBlock,
   CreateOrLoadSessionParams,
   DiagnosticEvent,
@@ -13,10 +13,10 @@ import type {
   ResumeSessionParams,
   SessionConfigOption,
   SessionConfigValue,
-  SessionSnapshotWire,
+  SessionSnapshot,
   SessionState,
-  Transport,
-  TransportConnectionStatus,
+  HostClientTransport,
+  HostClientTransportConnectionStatus,
 } from '@acpjs/protocol'
 
 export type { AgentDefinition, SessionConfigValue }
@@ -31,7 +31,7 @@ export interface AcpSession {
   getSnapshot: () => SessionState
   subscribe: (listener: (state: SessionState) => void) => () => void
   onEvent: (
-    listener: (event: AcpSessionEvent) => void,
+    listener: (event: AcpjsSessionEvent) => void,
     options?: SessionEventOptions,
   ) => () => void
   prompt: (blocks: ContentBlock[]) => Promise<PromptFinishedPayload>
@@ -65,7 +65,7 @@ export interface AcpAgentSessions {
 
 export interface AcpAgent {
   readonly agentId: string
-  getSnapshot: () => AgentSnapshotWire
+  getSnapshot: () => AgentSnapshot
   subscribe: (listener: ChangeListener) => () => void
   readonly sessions: AcpAgentSessions
 }
@@ -85,7 +85,7 @@ export type PermissionListener = (
 export type ChangeListener = () => void
 
 export interface ConnectionStatusSnapshot {
-  status: TransportConnectionStatus
+  status: HostClientTransportConnectionStatus
   error?: ErrorObject
 }
 
@@ -95,7 +95,7 @@ export interface AcpClient {
     get: (agentId: string) => AcpAgent | undefined
     getSnapshot: () => readonly AcpAgent[]
     subscribe: (listener: ChangeListener) => () => void
-    list: () => Promise<readonly AgentSnapshotWire[]>
+    list: () => Promise<readonly AgentSnapshot[]>
     attach: (agentId: string) => Promise<AcpAgent>
     dispose: (agentId: string) => Promise<void>
   }
@@ -103,9 +103,9 @@ export interface AcpClient {
     get: (sessionId: string) => AcpSession | undefined
     getSnapshot: () => readonly AcpSession[]
     subscribe: (listener: ChangeListener) => () => void
-    list: () => Promise<readonly SessionSnapshotWire[]>
+    list: () => Promise<readonly SessionSnapshot[]>
     attach: (sessionId: string) => Promise<AcpSession>
-    restore: () => Promise<readonly SessionSnapshotWire[]>
+    restore: () => Promise<readonly SessionSnapshot[]>
   }
   readonly permissions: {
     getSnapshot: () => readonly PermissionRequest[]
@@ -123,5 +123,5 @@ export interface AcpClient {
 }
 
 export interface CreateAcpClientOptions {
-  transport: Transport
+  transport: HostClientTransport
 }

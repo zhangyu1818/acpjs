@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { Readable, Writable } from 'node:stream'
 import { parseArgs } from 'node:util'
 
-import { AgentSideConnection, ndJsonStream } from '@agentclientprotocol/sdk'
+import { ndJsonStream } from '@agentclientprotocol/sdk'
 
 import { createFixtureAgent } from './agent.ts'
 
@@ -26,15 +26,12 @@ const stream = ndJsonStream(
   Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>,
 )
 
-const conn = new AgentSideConnection(
-  (agentConn) =>
-    createFixtureAgent(scenario, agentConn, {
-      writeRaw(message) {
-        process.stdout.write(`${JSON.stringify(message)}\n`)
-      },
-      exit: (code) => process.exit(code),
-    }),
-  stream,
-)
+const app = createFixtureAgent(scenario, {
+  disconnect() {
+    process.stdout.end()
+  },
+  exit: (code) => process.exit(code),
+})
+const conn = app.connect(stream)
 
 await conn.closed

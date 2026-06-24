@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 
 import { run } from './test-support'
 
-import type { AcpEvent } from './index'
+import type { AcpjsEvent } from './index'
 
 function terminalOutput(
   seq: number,
@@ -12,7 +12,7 @@ function terminalOutput(
     truncated?: boolean
     exit?: { exitCode?: number; signal?: string }
   },
-): AcpEvent {
+): AcpjsEvent {
   return { sessionId: 'sess-1', seq, ts: 0, type: 'terminal-output', payload }
 }
 

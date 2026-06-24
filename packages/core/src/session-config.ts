@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 
 import {
-  ACP_ERROR_CODES,
+  ACPJS_ERROR_CODES,
   type CreateOrLoadSessionParams,
   type ResumeSessionParams,
 } from '@acpjs/protocol'
@@ -20,14 +20,14 @@ import type { SessionMeta } from './storage.ts'
 export function requireCapability(enabled: boolean, capability: string): void {
   if (!enabled) {
     throw new AcpError(
-      ACP_ERROR_CODES.capabilityUnsupported,
+      ACPJS_ERROR_CODES.capabilityUnsupported,
       `agent does not support ${capability}`,
     )
   }
 }
 
 function configInvalid(message: string, data?: unknown): AcpError {
-  return new AcpError(ACP_ERROR_CODES.configInvalid, message, { data })
+  return new AcpError(ACPJS_ERROR_CODES.configInvalid, message, { data })
 }
 
 function requireStringArray(value: unknown, name: string): string[] {

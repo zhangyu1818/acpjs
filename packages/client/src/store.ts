@@ -1,9 +1,9 @@
 import {
   createInitialSessionState,
   reduce,
-  type AcpEvent,
+  type AcpjsEvent,
   type SessionState,
-  type SessionSnapshotWire,
+  type SessionSnapshot,
 } from '@acpjs/protocol'
 
 export type StateListener = (state: SessionState) => void
@@ -12,8 +12,8 @@ export interface SessionStore {
   readonly sessionId: string
   getSnapshot: () => SessionState
   subscribe: (listener: StateListener) => () => void
-  apply: (event: AcpEvent) => void
-  applyProjection: (snapshot: SessionSnapshotWire) => boolean
+  apply: (event: AcpjsEvent) => void
+  applyProjection: (snapshot: SessionSnapshot) => boolean
   lastSeq: () => number
 }
 

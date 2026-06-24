@@ -17,7 +17,7 @@ import {
   trackHost,
 } from './test-harness.ts'
 
-import type { AcpSessionEvent } from '@acpjs/protocol'
+import type { AcpjsSessionEvent } from '@acpjs/protocol'
 
 test('closeSession rejects when the lifecycle tombstone cannot be committed', async () => {
   const storage: StorageAdapter = {
@@ -131,7 +131,7 @@ test('loadSession rejects without publishing replay when atomic storage replace 
   const events = collectEvents(
     host,
     'sess-load-replace-fail',
-  ) as AcpSessionEvent[]
+  ) as AcpjsSessionEvent[]
 
   const error = await rejectionOf(
     host.loadSession(

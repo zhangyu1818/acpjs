@@ -3,7 +3,7 @@ import { expect, test } from 'vitest'
 import { createAcpClient } from './index.ts'
 import { createFakeHub } from './test-support.ts'
 
-test('agents.spawn performs a typed RPC roundtrip over the transport', async () => {
+test('agents.spawn performs a typed host request roundtrip over the transport', async () => {
   const hub = createFakeHub()
   hub.handle('agents/spawn', () => ({
     agentId: 'agent-1',

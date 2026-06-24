@@ -1,20 +1,21 @@
 # acpjs Design Philosophy
 
 acpjs is a headless, layered TypeScript toolkit that plays the **Client role** of the
-[Agent Client Protocol (ACP)](https://agentclientprotocol.com). It **packages the protocol** —
-it does not build a product on top of it.
+[Agent Client Protocol (ACP)](https://agentclientprotocol.com). It drives official ACP traffic
+through the SDK and packages the resulting updates into acpjs projections and adapters —
+it does not define a parallel protocol or build a product on top of it.
 
 ## The one rule: mechanism, not decision
 
 Before adding any capability, ask whether it is **mechanism** or **decision**.
 
-- **Mechanism — acpjs owns it.** Faithfully package the protocol and expose a clean,
+- **Mechanism — acpjs owns it.** Faithfully drive ACP through the SDK and expose a clean,
   serializable, replayable surface:
   - spawn and manage agent processes, drive the JSON-RPC connection, normalize the event stream
   - one pure reducer producing field-for-field consistent `SessionState` for every subscriber
   - surface reverse requests (permission / fs / terminal) as data, track pending, route responses back
   - replay/persist the event log, supersede on cancel, carry everything across a serializable
-    Transport boundary (in-process or cross-process)
+    HostClientTransport boundary (in-process or cross-process)
   - provide a sane, **replaceable** default fs handler; terminal handling is injected (ACP requires
     the client to perform the fs/terminal work it advertises)
 
@@ -53,14 +54,14 @@ not code baked into the toolkit.
 
 - **One-directional layering**: `protocol` ← `core` / `client` / `registry`; `react` → `client`;
   `electron(main)` → `core`.
-- The only boundary is the **Transport contract** (request/response + event push + reverse requests);
+- The host/client boundary is the **acpjs HostClientTransport contract** (request/response + event push + reverse requests);
   all payloads are structured-clone safe, so the same client works in-process or across a process boundary.
 - **Closed, typed surface** — every stable protocol capability has a typed entry point; there is no
-  raw-RPC escape hatch. When the protocol grows, the toolkit grows with it.
+  raw ACP-method escape hatch. When the protocol grows, the toolkit grows with it.
 
 ## Stability policy
 
-`AcpSessionEvent` and the per-session stream it travels on (surfaced via `onEvent`) are a **public,
+`AcpjsSessionEvent` and the per-session stream it travels on (surfaced via `onEvent`) are a **public,
 versioned contract**: the variant set, each variant's payload shape, and the `seq`/ordering
 semantics are guaranteed surface, not internal detail.
 

@@ -49,19 +49,20 @@ import {
 
 ## Minimal usage
 
-Write the scenario to disk, `spawn` the CLI, and attach the SDK's
-`ClientSideConnection` to its stdio. The scenario below runs a single turn that
-emits one agent message chunk and ends the turn:
+Write the scenario to disk, `spawn` the CLI, and connect the SDK client builder
+to its stdio. The scenario below runs a single turn that emits one agent message
+chunk and ends the turn:
 
 ```ts
 import { spawn } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 
 import {
-  ClientSideConnection,
+  client as createClientApp,
+  methods,
   ndJsonStream,
   PROTOCOL_VERSION,
-  type Client,
+  type SessionNotification,
 } from '@agentclientprotocol/sdk'
 
 import {
@@ -94,25 +95,33 @@ const child = spawn(
   { stdio: ['pipe', 'pipe', 'pipe'] },
 )
 
-const client: Client = {
-  async sessionUpdate() {},
-  async requestPermission() {
+const updates: SessionNotification[] = []
+const clientApp = createClientApp({ name: 'fixture-example' })
+  .onNotification(methods.client.session.update, ({ params }) => {
+    updates.push(params)
+  })
+  .onRequest(methods.client.session.requestPermission, () => {
     return { outcome: { outcome: 'cancelled' } }
-  },
-}
+  })
 const stream = ndJsonStream(
   Writable.toWeb(child.stdin),
   Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
 )
-const conn = new ClientSideConnection(() => client, stream)
+const conn = clientApp.connect(stream)
 
-await conn.initialize({ protocolVersion: PROTOCOL_VERSION })
-const { sessionId } = await conn.newSession({ cwd: '/tmp', mcpServers: [] })
-const result = await conn.prompt({
+await conn.agent.request(methods.agent.initialize, {
+  protocolVersion: PROTOCOL_VERSION,
+})
+const { sessionId } = await conn.agent.request(methods.agent.session.new, {
+  cwd: '/tmp',
+  mcpServers: [],
+})
+const result = await conn.agent.request(methods.agent.session.prompt, {
   sessionId,
   prompt: [{ type: 'text', text: 'hello' }],
 })
-// result.stopReason === 'end_turn'; client.sessionUpdate received the 'hi' chunk.
+// result.stopReason === 'end_turn'; updates contains the 'hi' chunk.
+conn.close()
 child.kill()
 ```
 
@@ -176,17 +185,17 @@ interface FixtureTurn {
 
 Each step is discriminated by `kind`:
 
-| `kind`          | Fields                                                             | Effect                                                                                                                                                   |
-| --------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `update`        | `update: SessionUpdate`                                            | Send a `session/update` through the SDK (type-checked).                                                                                                  |
-| `rawUpdate`     | `update: unknown`                                                  | Bypass the SDK and write one raw `session/update` NDJSON line; `update` is passed through verbatim. Use to inject unknown `sessionUpdate` discriminants. |
-| `permission`    | `toolCall`, `options`, `onSelected?`, `onCancelled?`               | Send `session/request_permission`; then run the matching branch (see below). This is `FixturePermissionStep`.                                            |
-| `readTextFile`  | `path`, `line?`, `limit?`                                          | Issue an `fs/read_text_file` reverse request to the client.                                                                                              |
-| `writeTextFile` | `path`, `content`                                                  | Issue an `fs/write_text_file` reverse request to the client.                                                                                             |
-| `terminal`      | `command`, `args?`, `env?`, `cwd?`, `outputByteLimit?`, `actions?` | Create a terminal, then run each action in `actions` in order: `'output' \| 'waitForExit' \| 'kill' \| 'release'`.                                       |
-| `sleep`         | `ms`                                                               | Wait `ms` milliseconds; interrupted immediately by `session/cancel`.                                                                                     |
-| `error`         | `code`, `message`, `data?`                                         | Throw a `RequestError`, ending the current turn with a protocol error.                                                                                   |
-| `exit`          | `code`                                                             | Call `process.exit(code)` to simulate an agent crash.                                                                                                    |
+| `kind`          | Fields                                                             | Effect                                                                                                             |
+| --------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `update`        | `update: SessionUpdate`                                            | Send a `session/update` through the SDK (type-checked).                                                            |
+| `permission`    | `toolCall`, `options`, `onSelected?`, `onCancelled?`               | Send `session/request_permission`; then run the matching branch (see below). This is `FixturePermissionStep`.      |
+| `readTextFile`  | `path`, `line?`, `limit?`                                          | Issue an `fs/read_text_file` reverse request to the client.                                                        |
+| `writeTextFile` | `path`, `content`                                                  | Issue an `fs/write_text_file` reverse request to the client.                                                       |
+| `terminal`      | `command`, `args?`, `env?`, `cwd?`, `outputByteLimit?`, `actions?` | Create a terminal, then run each action in `actions` in order: `'output' \| 'waitForExit' \| 'kill' \| 'release'`. |
+| `sleep`         | `ms`                                                               | Wait `ms` milliseconds; interrupted immediately by `session/cancel`.                                               |
+| `disconnect`    | none                                                               | Close the fixture transport stream while leaving the process alive.                                                |
+| `error`         | `code`, `message`, `data?`                                         | Throw a `RequestError`, ending the current turn with a protocol error.                                             |
+| `exit`          | `code`                                                             | Call `process.exit(code)` to simulate an agent crash.                                                              |
 
 #### Permission branching (`FixturePermissionStep`)
 

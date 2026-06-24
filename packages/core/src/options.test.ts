@@ -13,7 +13,7 @@ function captureError(fn: () => unknown): unknown {
   throw new Error('expected function to throw')
 }
 
-test('host options apply spec defaults', () => {
+test('host options apply acpjs runtime defaults', () => {
   const options = resolveHostOptions()
 
   expect(options.restart).toBe('never')

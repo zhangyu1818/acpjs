@@ -6,8 +6,8 @@ import {
 import { afterEach } from 'vitest'
 
 import type {
-  AcpEvent,
-  AgentSnapshotWire,
+  AcpjsEvent,
+  AgentSnapshot,
   CreateOrLoadSessionParams,
   DiagnosticPayload,
   ResumeSessionParams,
@@ -46,8 +46,8 @@ export function collectEvents(
   host: AcpHost,
   sessionId: string | undefined,
   fromSeq = 0,
-): AcpEvent[] {
-  const events: AcpEvent[] = []
+): AcpjsEvent[] {
+  const events: AcpjsEvent[] = []
   host.subscribe(sessionId, fromSeq, (event) => events.push(event))
   return events
 }
@@ -87,7 +87,7 @@ export async function waitFor(
 }
 
 export function diagnosticPayloads(
-  events: AcpEvent[],
+  events: AcpjsEvent[],
   code: string,
 ): DiagnosticPayload[] {
   const found: DiagnosticPayload[] = []
@@ -99,8 +99,8 @@ export function diagnosticPayloads(
   return found
 }
 
-export function agentStatusPayloads(events: AcpEvent[]): AgentSnapshotWire[] {
-  const found: AgentSnapshotWire[] = []
+export function agentStatusPayloads(events: AcpjsEvent[]): AgentSnapshot[] {
+  const found: AgentSnapshot[] = []
   for (const event of events) {
     if (event.type === 'agent-updated') found.push(event.payload)
   }

@@ -3,7 +3,7 @@ import { expect, test } from 'vitest'
 import { createAcpClient, type AcpSession } from './index.ts'
 import { createFakeHub, sessionParams, type FakeHub } from './test-support.ts'
 
-import type { AcpSessionEvent, SessionState } from '@acpjs/protocol'
+import type { AcpjsSessionEvent, SessionState } from '@acpjs/protocol'
 
 function hubWithSession(sessionId = 'sess-1'): FakeHub {
   const hub = createFakeHub()
@@ -39,7 +39,7 @@ test('onEvent({ fromSeq: 0 }) replays the full current-epoch log in seq order, t
     content: { type: 'text', text: 'b' },
   })
 
-  const seen: AcpSessionEvent[] = []
+  const seen: AcpjsSessionEvent[] = []
   session.onEvent((event) => seen.push(event), { fromSeq: 0 })
 
   expect(seen.map((event) => event.seq)).toEqual([1, 2])
@@ -61,7 +61,7 @@ test('onEvent() with no options is live-only: no historical re-delivery, only ev
     content: { type: 'text', text: 'before' },
   })
 
-  const seen: AcpSessionEvent[] = []
+  const seen: AcpjsSessionEvent[] = []
   session.onEvent((event) => seen.push(event))
 
   expect(seen).toEqual([])
@@ -80,7 +80,7 @@ test('onEvent opens an independent subscription that does not perturb subscribe(
   const states: SessionState[] = []
   session.subscribe((state) => states.push(state))
 
-  const events: AcpSessionEvent[] = []
+  const events: AcpjsSessionEvent[] = []
   const unsubscribe = session.onEvent((event) => events.push(event))
 
   hub.emit('sess-1', 'agent-message-chunk', {
@@ -105,11 +105,11 @@ test('onEvent opens an independent subscription that does not perturb subscribe(
   ])
 })
 
-test('onEvent delivers the normalized AcpSessionEvent, carrying extensions on a tool-call event', async () => {
+test('onEvent delivers the normalized AcpjsSessionEvent, carrying extensions on a tool-call event', async () => {
   const hub = hubWithSession()
   const { session } = await createdSession(hub)
 
-  const seen: AcpSessionEvent[] = []
+  const seen: AcpjsSessionEvent[] = []
   session.onEvent((event) => seen.push(event))
 
   hub.emitRaw({
@@ -122,7 +122,7 @@ test('onEvent delivers the normalized AcpSessionEvent, carrying extensions on a 
   })
 
   const toolCall = seen.find(
-    (event): event is Extract<AcpSessionEvent, { type: 'tool-call' }> =>
+    (event): event is Extract<AcpjsSessionEvent, { type: 'tool-call' }> =>
       event.type === 'tool-call',
   )
   expect(toolCall).toBeDefined()
@@ -134,7 +134,7 @@ test('onEvent carries tool-call _meta (subagent_session_info) verbatim to the li
   const hub = hubWithSession()
   const { session } = await createdSession(hub)
 
-  const seen: AcpSessionEvent[] = []
+  const seen: AcpjsSessionEvent[] = []
   session.onEvent((event) => seen.push(event))
 
   const extensions = {
@@ -156,7 +156,7 @@ test('onEvent carries tool-call _meta (subagent_session_info) verbatim to the li
   })
 
   const toolCall = seen.find(
-    (event): event is Extract<AcpSessionEvent, { type: 'tool-call' }> =>
+    (event): event is Extract<AcpjsSessionEvent, { type: 'tool-call' }> =>
       event.type === 'tool-call',
   )
   expect(toolCall?.extensions).toEqual(extensions)
@@ -178,7 +178,7 @@ test('onEvent observes session-reset and the seq epoch reset across a load', asy
     content: { type: 'text', text: 'pre-load' },
   })
 
-  const seen: AcpSessionEvent[] = []
+  const seen: AcpjsSessionEvent[] = []
   session.onEvent((event) => seen.push(event))
 
   hub.emitRaw({
@@ -197,7 +197,7 @@ test('onEvent observes session-reset and the seq epoch reset across a load', asy
   })
 
   const reset = seen.find(
-    (event): event is Extract<AcpSessionEvent, { type: 'session-reset' }> =>
+    (event): event is Extract<AcpjsSessionEvent, { type: 'session-reset' }> =>
       event.type === 'session-reset',
   )
   expect(reset).toBeDefined()

@@ -5,14 +5,14 @@ export { createHostEndpoint } from './host-endpoint.ts'
 export {
   AcpHost,
   createAcpHost,
-  type AgentSnapshotWire,
+  type AgentSnapshot,
   type CreateOrLoadSessionParams,
   type CreateSessionResult,
   type EventSubscriber,
   type PromptResult,
   type ResumeSessionParams,
   type SessionConfigValue,
-  type SessionSnapshotWire,
+  type SessionSnapshot,
 } from './host.ts'
 export { normalizeSessionUpdate, type NormalizedUpdate } from './normalize.ts'
 export {

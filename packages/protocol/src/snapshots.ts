@@ -10,7 +10,7 @@ import type {
 
 import type { AgentExitReason, AgentStatus, SessionStatus } from './domain'
 
-export interface AgentCapabilitiesWire {
+export interface AgentCapabilitiesSnapshot {
   loadSession?: boolean
   mcpCapabilities?: McpCapabilities
   nes?: NesCapabilities | null
@@ -19,17 +19,17 @@ export interface AgentCapabilitiesWire {
   sessionCapabilities?: SessionCapabilities
 }
 
-export interface AgentSnapshotWire {
+export interface AgentSnapshot {
   agentId: string
   status: AgentStatus
   restartCount: number
   reason?: AgentExitReason
   exit?: { code?: number; signal?: string }
-  capabilities?: AgentCapabilitiesWire
+  capabilities?: AgentCapabilitiesSnapshot
   authMethods?: AuthMethod[]
 }
 
-export interface SessionSnapshotWire {
+export interface SessionSnapshot {
   sessionId: string
   status: SessionStatus
   agentId?: string

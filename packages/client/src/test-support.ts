@@ -1,21 +1,22 @@
 import type {
-  AcpHostEvent,
-  AcpSessionEvent,
+  AcpjsHostEvent,
+  AcpjsHostMethod,
+  AcpjsSessionEvent,
   CreateOrLoadSessionParams,
   ErrorObject,
   InboundRequest,
   InboundResponse,
   ResumeSessionParams,
-  RpcRequest,
-  Transport,
-  TransportHandlers,
-  TransportLifecycleEvent,
-  TransportSubscribeParams,
+  HostRequest,
+  HostClientTransport,
+  HostClientTransportHandlers,
+  HostClientTransportLifecycleEvent,
+  HostClientTransportSubscribeParams,
 } from '@acpjs/protocol'
 
 type MethodHandler = (params: Record<string, unknown>) => unknown
 
-type HostEventInput<T = AcpHostEvent> = T extends AcpHostEvent
+type HostEventInput<T = AcpjsHostEvent> = T extends AcpjsHostEvent
   ? Omit<T, 'seq' | 'ts'>
   : never
 
@@ -43,24 +44,24 @@ export function resumeParams(
 }
 
 export interface FakeConnection {
-  transport: Transport
-  lifecycle: TransportLifecycleEvent[]
+  transport: HostClientTransport
+  lifecycle: HostClientTransportLifecycleEvent[]
 }
 
 export interface FakeHub {
-  requests: RpcRequest[]
-  subscriptions: TransportSubscribeParams[]
+  requests: HostRequest[]
+  subscriptions: HostClientTransportSubscribeParams[]
   inboundResponses: InboundResponse[]
-  handle: (method: string, handler: MethodHandler) => void
+  handle: (method: AcpjsHostMethod, handler: MethodHandler) => void
   emit: (
     sessionId: string,
-    type: AcpSessionEvent['type'],
+    type: AcpjsSessionEvent['type'],
     payload: unknown,
   ) => void
-  emitRaw: (event: AcpSessionEvent) => void
+  emitRaw: (event: AcpjsSessionEvent) => void
   emitHost: (event: HostEventInput) => void
   failSubscription: (
-    params: TransportSubscribeParams,
+    params: HostClientTransportSubscribeParams,
     error: ErrorObject,
   ) => void
   pushInbound: (request: InboundRequest) => void
@@ -100,23 +101,23 @@ export class ScriptedError extends Error {
 function noop(): void {}
 
 export function createFakeHub(): FakeHub {
-  const logs = new Map<string, AcpSessionEvent[]>()
+  const logs = new Map<string, AcpjsSessionEvent[]>()
   const liveSubscribers = new Map<
     string,
-    Set<(event: AcpSessionEvent) => void>
+    Set<(event: AcpjsSessionEvent) => void>
   >()
-  const hostLog: AcpHostEvent[] = []
-  const hostSubscribers = new Set<(event: AcpHostEvent) => void>()
-  const handlers = new Map<string, MethodHandler>()
-  const connections = new Set<TransportHandlers>()
-  const requests: RpcRequest[] = []
-  const subscriptions: TransportSubscribeParams[] = []
+  const hostLog: AcpjsHostEvent[] = []
+  const hostSubscribers = new Set<(event: AcpjsHostEvent) => void>()
+  const handlers = new Map<AcpjsHostMethod, MethodHandler>()
+  const connections = new Set<HostClientTransportHandlers>()
+  const requests: HostRequest[] = []
+  const subscriptions: HostClientTransportSubscribeParams[] = []
   const inboundResponses: InboundResponse[] = []
   let respondInboundHandler: (response: InboundResponse) => void = noop
 
   function emit(
     sessionId: string,
-    type: AcpSessionEvent['type'],
+    type: AcpjsSessionEvent['type'],
     payload: unknown,
   ): void {
     const log = logs.get(sessionId) ?? []
@@ -127,7 +128,7 @@ export function createFakeHub(): FakeHub {
       ts: 0,
       type,
       payload,
-    } as AcpSessionEvent
+    } as AcpjsSessionEvent
     log.push(event)
     for (const deliver of liveSubscribers.get(sessionId) ?? []) deliver(event)
   }
@@ -135,13 +136,13 @@ export function createFakeHub(): FakeHub {
   function connection(
     options: { failConnect?: ErrorObject } = {},
   ): FakeConnection {
-    const lifecycle: TransportLifecycleEvent[] = []
-    let status: TransportLifecycleEvent['status'] = 'connecting'
-    let connectedHandlers: TransportHandlers | undefined
-    const transport: Transport = {
+    const lifecycle: HostClientTransportLifecycleEvent[] = []
+    let status: HostClientTransportLifecycleEvent['status'] = 'connecting'
+    let connectedHandlers: HostClientTransportHandlers | undefined
+    const transport: HostClientTransport = {
       async connect(transportHandlers) {
         connectedHandlers = transportHandlers
-        const report = (event: TransportLifecycleEvent) => {
+        const report = (event: HostClientTransportLifecycleEvent) => {
           lifecycle.push(event)
           transportHandlers.onLifecycle(event)
         }
@@ -185,7 +186,7 @@ export function createFakeHub(): FakeHub {
           for (const event of hostLog) {
             if (event.seq > params.fromSeq) onEvent(event)
           }
-          const deliverHost = (event: AcpHostEvent) => onEvent(event)
+          const deliverHost = (event: AcpjsHostEvent) => onEvent(event)
           hostSubscribers.add(deliverHost)
           return () => hostSubscribers.delete(deliverHost)
         }
@@ -194,7 +195,7 @@ export function createFakeHub(): FakeHub {
         }
         const live = liveSubscribers.get(sessionId) ?? new Set()
         liveSubscribers.set(sessionId, live)
-        const deliver = (event: AcpSessionEvent) => onEvent(event)
+        const deliver = (event: AcpjsSessionEvent) => onEvent(event)
         live.add(deliver)
         return () => live.delete(deliver)
       },
@@ -207,7 +208,7 @@ export function createFakeHub(): FakeHub {
         status = 'closed'
         if (connectedHandlers) {
           connections.delete(connectedHandlers)
-          const event: TransportLifecycleEvent = { status: 'closed' }
+          const event: HostClientTransportLifecycleEvent = { status: 'closed' }
           lifecycle.push(event)
           connectedHandlers.onLifecycle(event)
         }
@@ -232,7 +233,7 @@ export function createFakeHub(): FakeHub {
         ...event,
         seq: hostLog.length + 1,
         ts: 0,
-      } as AcpHostEvent
+      } as AcpjsHostEvent
       hostLog.push(hostEvent)
       for (const deliver of hostSubscribers) deliver(hostEvent)
     },
@@ -259,7 +260,7 @@ export function createFakeHub(): FakeHub {
         ...hostEvent,
         seq: hostLog.length + 1,
         ts: 0,
-      } as AcpHostEvent
+      } as AcpjsHostEvent
       hostLog.push(event)
       for (const deliver of hostSubscribers) deliver(event)
     },

@@ -55,7 +55,7 @@ await host.closeSession(sessionId)
 await host.dispose()
 ```
 
-`createSession` resolves to the created `SessionSnapshotWire`. Agent-side
+`createSession` resolves to the created `SessionSnapshot`. Agent-side
 JSON-RPC errors, including authentication-related errors, are propagated to the
 caller; acpjs does not model login state.
 
@@ -110,26 +110,28 @@ Normalization: `normalizeSessionUpdate(update)` maps the 13 `SessionUpdate`
 variants to event `type` / `payload` / `extensions`; unmodeled variants
 degrade to `unrecognized-update` (INV-4).
 
-Errors: `AcpError` carries a `code` drawn from the closed `ACP_ERROR_CODES`
-namespace in `@acpjs/protocol` (`acpjs/config-invalid`,
+Errors: `AcpError` carries a host-boundary sentinel `code` drawn from the
+closed `ACPJS_ERROR_CODES` namespace in `@acpjs/protocol` (`acpjs/config-invalid`,
 `acpjs/prompt-in-flight`, `acpjs/already-answered`, `acpjs/session-closed`,
 `acpjs/agent-exited`, `acpjs/capability-unsupported`,
 `acpjs/agent-error`, `acpjs/transport-closed`).
 
 Envelope adapter: `createHostEndpoint(host)` returns an `EnvelopeEndpoint`
-(Transport contract shape). RPC method names come from `ACPJS_HOST_RPC_METHODS` in
+(acpjs HostClientTransport contract shape). Host method ids come from
+`ACPJS_HOST_METHODS` in
 `@acpjs/protocol` (`agents/spawn|list|dispose`,
 `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`)
-and map to the same-named host methods. Missing required parameters are
-rejected at the envelope boundary with `acpjs/config-invalid`. Event
+and map to the same-named host methods; they are not ACP agent method names.
+Missing required parameters are
+rejected at the adapter boundary with `acpjs/config-invalid`. Event
 subscriptions pass through to `host.subscribe`. Permission requests are pushed
 back as `InboundRequest` (kind `permission`) and answered through
 `respondInbound`. The `@acpjs/client` in-process transport connects to this
 endpoint with zero direct dependency on core.
 
 All public method parameters and return values are structured-clone
-serializable (events are `@acpjs/protocol` events), so they can be carried over
-the Transport contract directly.
+serializable (events are `@acpjs/protocol` projection events), so they can be
+carried over the acpjs HostClientTransport contract directly.
 
 ## HostOptions
 
@@ -148,7 +150,7 @@ it.
 
 ## Snapshots
 
-`getAgent` / `getAgents` return `AgentSnapshotWire`:
+`getAgent` / `getAgents` return `AgentSnapshot`:
 `{ agentId, status, restartCount, reason?, exit?, capabilities?, authMethods? }`.
 
 `authMethods` is the agent's advertised auth methods captured from the
@@ -156,17 +158,17 @@ it.
 surfaced verbatim and omitted until the handshake completes. acpjs still runs no
 authenticate flow; this is the data integrators read to drive out-of-band login.
 
-`getSession` / `getSessions` return `SessionSnapshotWire`:
+`getSession` / `getSessions` return `SessionSnapshot`:
 `{ sessionId, status, agentId?, cwd, mcpServers?, additionalDirectories, agentDefinitionId?, title?, updatedAt? }`.
 
 ## Host stream and diagnostics
 
 The host stream (subscribed with `subscribe(undefined, fromSeq, cb)`) carries:
 
-- `agent-updated` — full `AgentSnapshotWire` projection.
+- `agent-updated` — full `AgentSnapshot` projection.
 - `agent-removed` — payload `{ agentId }`; emitted when `disposeAgent` tears down
   an agent and removes it from `getAgents()`.
-- `session-updated` — full `SessionSnapshotWire` projection.
+- `session-updated` — full `SessionSnapshot` projection.
 - `permission-updated` — host-level permission pending/answered/superseded
   projection.
 - `diagnostic` events with the following `code` values: `agent/spawn`,
@@ -194,10 +196,10 @@ reduction. The `agent/spawn` diagnostic records only env key names, never values
   Snapshots) for integrators to act on. Agent-side authentication failures are
   propagated as agent JSON-RPC errors; callers configure/login the agent outside
   acpjs and retry.
-- **prompt protocol-error event shape**: the `prompt-finished` event (and the
-  `prompt` return value) uses `stopReason: 'end_turn'` as a placeholder and
-  carries `error: { code, message, data? }`. `prompt` does not reject, except on
-  agent crash, which rejects with `acpjs/agent-exited`.
+- **prompt protocol errors**: `prompt` rejects on agent JSON-RPC/protocol
+  errors instead of fabricating a `StopReason`. Direct host callers receive the
+  agent error object; callers through `createHostEndpoint` receive
+  `acpjs/agent-error` with the original `{ code, message, data? }` in `data`.
 - **normalization key-omission rule**: payload keys whose value is `null` for an
   OPTIONAL field are omitted, except keys whose explicit `null` is preserved:
   `session_info_update`'s `title` / `updatedAt` (clear semantics) and
@@ -221,7 +223,11 @@ reduction. The `agent/spawn` diagnostic records only env key names, never values
   boolean; `set_mode` / `set_config_option` check whether the session has ever
   seen modes / configOptions (in a new/load/resume response). Local
   close/delete lifecycle is always available and remote close/delete is
-  best-effort when the agent declares support.
+  best-effort when the agent declares support. `closeSession` / `deleteSession`
+  resolve when the local lifecycle tombstone, storage commit, cleanup, and
+  projections succeed; they do not wait for an ACP agent ACK. Remote
+  close/delete failures are reported as diagnostics and do not roll back the
+  local tombstone.
 - **storage semantics**: event writes are queued and write failures emit
   `storage/write-failed` diagnostics, which are not recursively persisted.
   Lifecycle tombstones for close/delete are strict commits: if they cannot be

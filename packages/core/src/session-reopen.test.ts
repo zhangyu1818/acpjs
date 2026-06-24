@@ -9,7 +9,7 @@ import {
   trackHost,
 } from './test-harness.ts'
 
-import type { AcpSessionEvent } from '@acpjs/protocol'
+import type { AcpjsSessionEvent } from '@acpjs/protocol'
 
 test('loadSession reopens a closed session, replays history, and resumes prompting', async () => {
   const host = trackHost(createAcpHost())
@@ -57,7 +57,7 @@ test('loadSession reopens a closed session, replays history, and resumes prompti
   await host.loadSession(agent.agentId, sessionId, sessionParams('/tmp'))
   expect(host.getSession(sessionId)?.status).toBe('active')
 
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, sessionId) as AcpjsSessionEvent[]
   const replayed = events.find(
     (event) =>
       event.type === 'agent-message-chunk' &&

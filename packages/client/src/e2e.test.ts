@@ -217,6 +217,31 @@ test('agent auth errors from create are propagated to the caller', async () => {
   })
 })
 
+test('agent auth errors from prompt are propagated to the caller', async () => {
+  const { client, definition } = await e2eClient({
+    initialize: { authMethods: [{ id: 'device', name: 'Device flow' }] },
+    turns: [
+      { steps: [{ kind: 'error', code: -32000, message: 'auth required' }] },
+    ],
+  })
+  const agent = await client.agents.spawn(definition)
+  const session = await agent.sessions.create(sessionParams('/tmp'))
+
+  const error = await rejectionOf(
+    session.prompt([{ type: 'text', text: 'go' }]),
+  )
+
+  expect(error).toMatchObject({
+    code: 'acpjs/agent-error',
+    data: { code: -32000, message: 'auth required' },
+    retryable: false,
+  })
+  expect(session.getSnapshot().connection.status).toBe('active')
+  await expect(
+    session.prompt([{ type: 'text', text: 'retry' }]),
+  ).resolves.toEqual({ stopReason: 'end_turn' })
+})
+
 test('cancel ends the in-flight prompt with stopReason cancelled', async () => {
   const { client, definition } = await e2eClient({
     turns: [{ steps: [{ kind: 'sleep', ms: 5000 }] }],
@@ -277,6 +302,7 @@ test('capability-rich agent: load, list, setMode, resume and delete succeed end 
       },
     },
     loadSession: {
+      expectMcpServers: mcpServers,
       modes: {
         currentModeId: 'code',
         availableModes: [

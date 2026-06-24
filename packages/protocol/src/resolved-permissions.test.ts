@@ -1,9 +1,13 @@
 import { expect, test } from 'vitest'
 
-import { type AcpEvent, reduce } from './index'
+import { type AcpjsEvent, reduce } from './index'
 import { run } from './test-support'
 
-function created(seq: number, requestId: string, toolCallId: string): AcpEvent {
+function created(
+  seq: number,
+  requestId: string,
+  toolCallId: string,
+): AcpjsEvent {
   return {
     sessionId: 'sess-1',
     seq,
@@ -22,7 +26,7 @@ function resolved(
   requestId: string,
   status: 'answered' | 'superseded',
   outcome?: { outcome: 'selected'; optionId: string },
-): AcpEvent {
+): AcpjsEvent {
   return {
     sessionId: 'sess-1',
     seq,

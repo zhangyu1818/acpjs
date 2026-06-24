@@ -1,18 +1,18 @@
 import {
-  ACP_ERROR_CODES,
+  ACPJS_ERROR_CODES,
   type PromptFinishedPayload,
   type SessionConfigValue,
 } from '@acpjs/protocol'
-
-import { AcpError } from './errors.ts'
-import { protocolErrorInfo, type SessionHandle } from './internal.ts'
-import { requireCapability } from './session-config.ts'
-
-import type {
-  ContentBlock,
-  SessionConfigOption,
+import {
+  methods,
+  type ContentBlock,
+  type SessionConfigOption,
 } from '@agentclientprotocol/sdk'
 
+import { AcpError } from './errors.ts'
+import { requireCapability } from './session-config.ts'
+
+import type { SessionHandle } from './internal.ts'
 import type { SessionManager } from './session-manager.ts'
 
 function canCommitPrompt(
@@ -38,6 +38,21 @@ function finishPrompt(
     manager.bus.setSessionStatus(session, 'active')
   }
   return structuredClone(payload)
+}
+
+function restorePromptAfterFailure(
+  manager: SessionManager,
+  session: SessionHandle,
+): void {
+  delete session.clientPromptEchoes
+  delete session.promptCancellationRequested
+  if (canCommitPrompt(manager, session)) {
+    manager.bus.setSessionStatus(session, 'active')
+  }
+}
+
+function wasPromptCancellationRequested(session: SessionHandle): boolean {
+  return session.promptCancellationRequested === true
 }
 
 function emitClientPrompt(
@@ -67,19 +82,19 @@ export async function promptManagedSession(
   const session = manager.require(sessionId)
   if (session.status === 'prompting') {
     throw new AcpError(
-      ACP_ERROR_CODES.promptInFlight,
+      ACPJS_ERROR_CODES.promptInFlight,
       `session ${sessionId} already has a prompt in flight`,
     )
   }
   if (session.lifecycleOperation !== undefined) {
     throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
+      ACPJS_ERROR_CODES.configInvalid,
       `session ${sessionId} lifecycle operation in progress`,
     )
   }
   if (session.status !== 'active') {
     throw new AcpError(
-      ACP_ERROR_CODES.sessionClosed,
+      ACPJS_ERROR_CODES.sessionClosed,
       `session ${sessionId} is not active`,
     )
   }
@@ -91,25 +106,18 @@ export async function promptManagedSession(
   try {
     const response = await manager.runtime.track(
       handle,
-      conn.prompt({ sessionId, prompt }),
+      conn.agent.request(methods.agent.session.prompt, { sessionId, prompt }),
     )
     payload = {
-      stopReason: session.promptCancellationRequested
+      stopReason: wasPromptCancellationRequested(session)
         ? 'cancelled'
         : response.stopReason,
       ...(response.usage == null ? {} : { usage: response.usage }),
     }
   } catch (error) {
     if (error instanceof AcpError) throw error
-    const info = protocolErrorInfo(error)
-    if (info === undefined) {
-      if (canCommitPrompt(manager, session)) {
-        manager.bus.setSessionStatus(session, 'active')
-      }
-      throw error
-    }
-    payload = { stopReason: 'end_turn', error: info }
-    return finishPrompt(manager, session, payload)
+    restorePromptAfterFailure(manager, session)
+    throw error
   }
   return finishPrompt(manager, session, payload)
 }
@@ -121,7 +129,7 @@ export async function cancelManagedSession(
   const session = manager.require(sessionId)
   if (session.lifecycleOperation !== undefined) {
     throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
+      ACPJS_ERROR_CODES.configInvalid,
       `session ${sessionId} lifecycle operation in progress`,
     )
   }
@@ -130,7 +138,10 @@ export async function cancelManagedSession(
     session.promptCancellationRequested = true
   }
   try {
-    await manager.runtime.track(handle, conn.cancel({ sessionId }))
+    await manager.runtime.track(
+      handle,
+      conn.agent.notify(methods.agent.session.cancel, { sessionId }),
+    )
   } finally {
     manager.router.supersedeForSession(sessionId)
   }
@@ -144,7 +155,7 @@ export async function setManagedSessionMode(
   const session = manager.require(sessionId)
   if (session.lifecycleOperation !== undefined) {
     throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
+      ACPJS_ERROR_CODES.configInvalid,
       `session ${sessionId} lifecycle operation in progress`,
     )
   }
@@ -152,7 +163,7 @@ export async function setManagedSessionMode(
   requireCapability(session.hasModes, 'session/set_mode')
   await manager.runtime.track(
     handle,
-    conn.setSessionMode({ sessionId, modeId }),
+    conn.agent.request(methods.agent.session.setMode, { sessionId, modeId }),
   )
   manager.bus.emitSession(session, 'current-mode-update', {
     currentModeId: modeId,
@@ -168,7 +179,7 @@ export async function setManagedSessionConfigOption(
   const session = manager.require(sessionId)
   if (session.lifecycleOperation !== undefined) {
     throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
+      ACPJS_ERROR_CODES.configInvalid,
       `session ${sessionId} lifecycle operation in progress`,
     )
   }
@@ -176,7 +187,11 @@ export async function setManagedSessionConfigOption(
   requireCapability(session.hasConfigOptions, 'session/set_config_option')
   const response = await manager.runtime.track(
     handle,
-    conn.setSessionConfigOption({ sessionId, configId, ...value }),
+    conn.agent.request(methods.agent.session.setConfigOption, {
+      sessionId,
+      configId,
+      ...value,
+    }),
   )
   manager.bus.emitSession(session, 'config-options-update', {
     configOptions: response.configOptions,

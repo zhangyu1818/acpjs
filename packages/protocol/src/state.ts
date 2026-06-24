@@ -17,7 +17,7 @@ import type {
 } from '@agentclientprotocol/sdk'
 
 import type { SessionStatus } from './domain'
-import type { AcpEventExtensions } from './events'
+import type { AcpjsEventExtensions } from './events'
 
 export type MessageKind = 'user' | 'agent' | 'thought'
 
@@ -37,7 +37,7 @@ export interface ToolCallState {
   locations: ToolCallLocation[]
   rawInput: unknown
   rawOutput: unknown
-  extensions?: AcpEventExtensions
+  extensions?: AcpjsEventExtensions
   seq: number
 }
 
@@ -71,12 +71,6 @@ export interface ResolvedPermissionRequest {
   outcome?: RequestPermissionOutcome
 }
 
-export interface PromptErrorState {
-  code: number
-  message: string
-  data?: unknown
-}
-
 export interface SessionState {
   sessionId: string
   messages: SessionMessage[]
@@ -89,7 +83,6 @@ export interface SessionState {
   usage: SessionUsageState | null
   lastTurnUsage: Usage | null
   lastStopReason: StopReason | null
-  lastPromptError: PromptErrorState | null
   connection: SessionConnectionState
   pendingPermissionRequests: PendingPermissionRequest[]
   terminals: Record<string, TerminalOutputState>
@@ -109,7 +102,6 @@ export function createInitialSessionState(sessionId: string): SessionState {
     usage: null,
     lastTurnUsage: null,
     lastStopReason: null,
-    lastPromptError: null,
     connection: { status: 'creating', resumed: false },
     pendingPermissionRequests: [],
     terminals: {},

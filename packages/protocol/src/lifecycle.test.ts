@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { type AcpEvent, createInitialSessionState, reduce } from './index'
+import { type AcpjsEvent, createInitialSessionState, reduce } from './index'
 import { chunk, run, statusEvent } from './test-support'
 
 test('createInitialSessionState produces an empty session state bound to the session id', () => {
@@ -16,7 +16,6 @@ test('createInitialSessionState produces an empty session state bound to the ses
     usage: null,
     lastTurnUsage: null,
     lastStopReason: null,
-    lastPromptError: null,
     connection: { status: 'creating', resumed: false },
     pendingPermissionRequests: [],
     terminals: {},
@@ -43,10 +42,9 @@ test('prompt termination records stop reason and passes turn usage through verba
     outputTokens: 20,
     totalTokens: 30,
   })
-  expect(state.lastPromptError).toBeNull()
 })
 
-test('prompt termination without usage clears the previous turn usage and may carry an error', () => {
+test('prompt termination without usage clears the previous turn usage', () => {
   const state = run([
     {
       sessionId: 'sess-1',
@@ -65,16 +63,11 @@ test('prompt termination without usage clears the previous turn usage and may ca
       type: 'prompt-finished',
       payload: {
         stopReason: 'cancelled',
-        error: { code: -32603, message: 'Internal error' },
       },
     },
   ])
   expect(state.lastStopReason).toBe('cancelled')
   expect(state.lastTurnUsage).toBeNull()
-  expect(state.lastPromptError).toEqual({
-    code: -32603,
-    message: 'Internal error',
-  })
 })
 
 test('a disconnected session and a session resumed back to active are distinguishable', () => {
@@ -186,7 +179,7 @@ test('permission request lifecycle adds to and removes from the pending list', (
 
 test('unrecognized updates, diagnostics and host events leave the state identical without throwing', () => {
   const state = run([chunk('agent-message-chunk', 'hello', 'm1')])
-  const untouched: AcpEvent[] = [
+  const untouched: AcpjsEvent[] = [
     {
       sessionId: 'sess-1',
       seq: 2,
@@ -260,7 +253,7 @@ test('unrecognized updates, diagnostics and host events leave the state identica
 })
 
 test('reduce never mutates the previous state or the event', () => {
-  const events: AcpEvent[] = [
+  const events: AcpjsEvent[] = [
     chunk('agent-message-chunk', 'Hel', 'm1'),
     chunk('agent-message-chunk', 'lo', 'm1', 2),
     {

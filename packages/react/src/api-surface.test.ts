@@ -20,7 +20,7 @@ test('the package export surface is sealed', () => {
 test('hooks expose an optional selector but no required selector or raw subscription parameter', () => {
   // .length counts only required params; optional selector/isEqual do not bump
   // it. The arity table is the boundary that keeps the surface sealed: there is
-  // deliberately no required selector/subscription param, no raw RPC send, no
+  // deliberately no required selector/subscription param, no raw host-envelope send, no
   // raw protocol-notification subscribe, and no raw event/event-log handle.
   // Only a typed pure-projection selector is permitted.
   expect(api.useAcpClient.length).toBe(0)

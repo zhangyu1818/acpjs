@@ -42,9 +42,28 @@ const distFiles = (pkg) =>
     .filter((file) => file.endsWith('.js'))
     .map((file) => join(root, 'packages', pkg, 'dist', file))
 
+const importedJsFiles = (entry) => {
+  const seen = new Set()
+  const visit = (file) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    const source = readFileSync(file, 'utf8')
+    const imports = source.matchAll(
+      /\b(?:import|export)\s+(?:[^'"]*?\s+from\s+)?["'](\.[^"']+\.js)["']/g,
+    )
+    for (const match of imports) {
+      const specifier = match[1]
+      if (specifier === undefined) continue
+      visit(resolve(file, '..', specifier))
+    }
+  }
+  visit(entry)
+  return [...seen]
+}
+
 const browserSafeFiles = [
   ...['protocol', 'client', 'react'].flatMap(distFiles),
-  join(root, 'packages', 'electron', 'dist', 'renderer.js'),
+  ...importedJsFiles(join(root, 'packages', 'electron', 'dist', 'renderer.js')),
 ]
 
 console.log('\n> browser-safe dist scan')

@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import type { AcpEvent, AcpSessionEvent } from '@acpjs/protocol'
+import type { AcpjsEvent, AcpjsSessionEvent } from '@acpjs/protocol'
 import type { McpServer } from '@agentclientprotocol/sdk'
 
 export interface SessionMeta {
@@ -16,17 +16,17 @@ export interface SessionMeta {
 }
 
 export interface StorageAdapter {
-  appendEvent(event: AcpEvent): void | Promise<void>
+  appendEvent(event: AcpjsEvent): void | Promise<void>
   appendMeta(meta: SessionMeta): void | Promise<void>
   listSessions(): SessionMeta[] | Promise<SessionMeta[]>
   loadEvents(
     sessionId: string,
     fromSeq?: number,
-  ): AcpEvent[] | Promise<AcpEvent[]>
+  ): AcpjsEvent[] | Promise<AcpjsEvent[]>
   replaceSession(
     sessionId: string,
     meta: SessionMeta,
-    events: AcpSessionEvent[],
+    events: AcpjsSessionEvent[],
   ): void | Promise<void>
 }
 
@@ -34,7 +34,7 @@ function emptyMeta(sessionId: string): SessionMeta {
   return { sessionId, cwd: '', additionalDirectories: [], lifecycle: 'open' }
 }
 
-function isSessionEvent(event: unknown): event is AcpSessionEvent {
+function isSessionEvent(event: unknown): event is AcpjsSessionEvent {
   return (
     typeof event === 'object' &&
     event !== null &&
@@ -43,7 +43,7 @@ function isSessionEvent(event: unknown): event is AcpSessionEvent {
 }
 
 export function createMemoryStorage(): StorageAdapter {
-  const logs = new Map<string, AcpSessionEvent[]>()
+  const logs = new Map<string, AcpjsSessionEvent[]>()
   const metas = new Map<string, SessionMeta>()
   return {
     appendEvent(event) {
@@ -108,9 +108,9 @@ export function createJsonlStorage(file: string): StorageAdapter {
     return lines
   }
 
-  async function readEvents(): Promise<AcpEvent[]> {
+  async function readEvents(): Promise<AcpjsEvent[]> {
     const lines = await readLines()
-    return lines.filter((line): line is AcpEvent => !isMetaLine(line))
+    return lines.filter((line): line is AcpjsEvent => !isMetaLine(line))
   }
 
   function enqueue(line: string): Promise<void> {
@@ -131,7 +131,7 @@ export function createJsonlStorage(file: string): StorageAdapter {
   function enqueueReplaceSession(
     sessionId: string,
     meta: SessionMeta,
-    events: AcpSessionEvent[],
+    events: AcpjsSessionEvent[],
   ): Promise<void> {
     const write = queue.then(async () => {
       const lines = await readLines()

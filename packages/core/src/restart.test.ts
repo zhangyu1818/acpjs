@@ -16,12 +16,12 @@ import {
 } from './test-harness.ts'
 
 import type { FixtureScenario } from '@acpjs/fixture-agent'
-import type { AcpEvent, SessionStatusChangePayload } from '@acpjs/protocol'
+import type { AcpjsEvent, SessionStatusChangePayload } from '@acpjs/protocol'
 
 const tinyBackoff = { initialMs: 5, factor: 2, maxMs: 50 }
 
 function sessionStatusPayloads(
-  events: AcpEvent[],
+  events: AcpjsEvent[],
 ): SessionStatusChangePayload[] {
   const found: SessionStatusChangePayload[] = []
   for (const event of events) {
@@ -80,7 +80,11 @@ test('restart never: crash is terminal, session stays disconnected', async () =>
   )
 
   expect(error).toMatchObject({ code: 'acpjs/agent-exited' })
-  await waitFor(() => host.getAgent(agentId)?.status === 'exited')
+  await waitFor(
+    () =>
+      host.getAgent(agentId)?.status === 'exited' &&
+      host.getAgent(agentId)?.exit !== undefined,
+  )
 
   expect(host.getAgent(agentId)?.reason).toBe('crashed')
   expect(host.getAgent(agentId)?.exit).toEqual({ code: 7 })

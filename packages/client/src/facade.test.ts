@@ -60,7 +60,7 @@ test('prompt passes content blocks through untouched and returns the prompt resu
   })
 })
 
-test('cancel, close, setMode and setConfigOption map to their session RPCs', async () => {
+test('cancel, close, setMode and setConfigOption map to their host methods', async () => {
   const { hub, session } = await setup()
   hub.handle('sessions/cancel', () => null)
   hub.handle('sessions/close', () => null)
@@ -97,7 +97,7 @@ test('cancel, close, setMode and setConfigOption map to their session RPCs', asy
   ])
 })
 
-test('sessions.list, resume and delete map to their RPCs with capability errors passed through', async () => {
+test('sessions.list, resume and delete map to their host methods with capability errors passed through', async () => {
   const { hub, agent } = await setup()
   hub.handle('sessions/list', () => ({
     sessions: [{ sessionId: 'sess-1', cwd: '/tmp' }],
@@ -136,7 +136,7 @@ test('sessions.list, resume and delete map to their RPCs with capability errors 
   ])
 })
 
-test('agents.list returns the host agent snapshots over the agents/list RPC', async () => {
+test('agents.list returns the host agent snapshots over agents/list', async () => {
   const { hub, client } = await setup()
   hub.handle('agents/list', () => [
     { agentId: 'agent-1', status: 'ready', restartCount: 0 },
@@ -165,7 +165,7 @@ test('agents.list returns the host agent snapshots over the agents/list RPC', as
   })
 })
 
-test('sessions.list returns the host session snapshots over the sessions/getAll RPC', async () => {
+test('sessions.list returns the host session snapshots over sessions/getAll', async () => {
   const { hub, client } = await setup()
   hub.handle('sessions/getAll', () => [
     { sessionId: 'sess-1', status: 'active', agentId: 'agent-1', cwd: '/tmp' },
@@ -184,7 +184,7 @@ test('sessions.list returns the host session snapshots over the sessions/getAll 
   })
 })
 
-test('sessions.restore triggers host recovery over the sessions/restore RPC and returns the snapshots', async () => {
+test('sessions.restore triggers host recovery over sessions/restore and returns the snapshots', async () => {
   const { hub, client } = await setup()
   hub.handle('sessions/restore', () => [
     { sessionId: 'sess-old', status: 'disconnected' },

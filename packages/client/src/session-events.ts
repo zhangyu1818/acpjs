@@ -1,6 +1,6 @@
 import { createSessionStore, type SessionStore } from './store.ts'
 
-import type { Transport } from '@acpjs/protocol'
+import type { HostClientTransport } from '@acpjs/protocol'
 
 import type { AcpSession } from './types.ts'
 
@@ -12,7 +12,7 @@ export interface SessionEvents {
 }
 
 export interface SessionEventsOptions {
-  subscribe: Transport['subscribe']
+  subscribe: HostClientTransport['subscribe']
   storeUnsubscribers: Set<() => void>
   prune: (requestId: string) => void
 }

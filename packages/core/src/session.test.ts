@@ -6,13 +6,12 @@ import {
   collectEvents,
   fixtureDefinition,
   rejectionOf,
-  resumeParams,
   sessionParams,
   trackHost,
 } from './test-harness.ts'
 
 import type { FixtureScenario } from '@acpjs/fixture-agent'
-import type { AcpSessionEvent } from '@acpjs/protocol'
+import type { AcpjsSessionEvent } from '@acpjs/protocol'
 import type { SessionNotification } from '@agentclientprotocol/sdk'
 
 async function activeSession(scenario: FixtureScenario) {
@@ -53,7 +52,7 @@ test('createSession resolves active, synthesizes session-config-init and status 
     mcpServers: [],
     additionalDirectories: [],
   })
-  const events = collectEvents(host, 'sess-1') as AcpSessionEvent[]
+  const events = collectEvents(host, 'sess-1') as AcpjsSessionEvent[]
   expect(events.map((event) => [event.seq, event.type])).toEqual([
     [1, 'session-config-init'],
     [2, 'session-status-change'],
@@ -125,7 +124,7 @@ test('prompt emits normalized events for all modeled variants plus prompt-finish
       },
     ],
   })
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, sessionId) as AcpjsSessionEvent[]
 
   const result = await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
 
@@ -193,7 +192,7 @@ test('prompt records client prompt as a user message when the agent does not ech
       },
     ],
   })
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, sessionId) as AcpjsSessionEvent[]
 
   await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
 
@@ -240,7 +239,7 @@ test('prompt suppresses an exact agent echo of the client prompt', async () => {
       },
     ],
   })
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, sessionId) as AcpjsSessionEvent[]
 
   await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
 
@@ -266,7 +265,7 @@ test('UNSTABLE plan_update degrades to unrecognized-update (INV-4)', async () =>
   const { host, sessionId } = await activeSession({
     turns: [{ steps: [{ kind: 'update', update: planUpdate }] }],
   })
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, sessionId) as AcpjsSessionEvent[]
 
   await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
 
@@ -285,7 +284,7 @@ test('_meta and unknown top-level fields move into extensions', async () => {
   const { host, sessionId } = await activeSession({
     turns: [{ steps: [{ kind: 'update', update }] }],
   })
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, sessionId) as AcpjsSessionEvent[]
 
   await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
 
@@ -328,7 +327,7 @@ test('cancel resolves the in-flight prompt with stopReason cancelled', async () 
   const { host, sessionId } = await activeSession({
     turns: [{ steps: [{ kind: 'sleep', ms: 5000 }] }],
   })
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, sessionId) as AcpjsSessionEvent[]
 
   const inFlight = host.prompt(sessionId, [{ type: 'text', text: 'go' }])
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 50))
@@ -356,7 +355,7 @@ test('non-auth protocol error on session/new rethrows without creating a session
   expect(host.getSessions()).toEqual([])
 })
 
-test('protocol error inside prompt yields prompt-finished with error and session back to active', async () => {
+test('protocol error inside prompt rejects and returns the session back to active', async () => {
   const { host, sessionId } = await activeSession({
     turns: [
       {
@@ -366,20 +365,19 @@ test('protocol error inside prompt yields prompt-finished with error and session
       },
     ],
   })
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
+  const error = await rejectionOf(
+    host.prompt(sessionId, [{ type: 'text', text: 'go' }]),
+  )
 
-  const result = await host.prompt(sessionId, [{ type: 'text', text: 'go' }])
-
-  expect(result.error).toEqual({
+  expect(error).toMatchObject({
     code: -32603,
     message: 'boom',
     data: { x: 1 },
   })
-  const finished = events.find((event) => event.type === 'prompt-finished')
-  expect(finished?.payload).toMatchObject({
-    error: { code: -32603, message: 'boom' },
-  })
   expect(host.getSession(sessionId)?.status).toBe('active')
+  await expect(
+    host.prompt(sessionId, [{ type: 'text', text: 'retry' }]),
+  ).resolves.toEqual({ stopReason: 'end_turn' })
 })
 
 test('operations against an exited agent are rejected with acpjs/agent-exited', async () => {
@@ -396,187 +394,4 @@ test('operations against an exited agent are rejected with acpjs/agent-exited', 
     host.createSession(agentId, sessionParams('/tmp')),
   )
   expect(error).toMatchObject({ code: 'acpjs/agent-exited' })
-})
-
-test('capability-gated methods reject with acpjs/capability-unsupported when undeclared', async () => {
-  const { host, agentId, sessionId } = await activeSession({})
-
-  expect(await rejectionOf(host.listSessions(agentId))).toMatchObject({
-    code: 'acpjs/capability-unsupported',
-  })
-  expect(
-    await rejectionOf(host.resumeSession(agentId, sessionId, resumeParams())),
-  ).toMatchObject({
-    code: 'acpjs/capability-unsupported',
-  })
-  expect(
-    await rejectionOf(host.loadSession(agentId, sessionId, sessionParams())),
-  ).toMatchObject({ code: 'acpjs/capability-unsupported' })
-  expect(await rejectionOf(host.setMode(sessionId, 'plan'))).toMatchObject({
-    code: 'acpjs/capability-unsupported',
-  })
-  expect(
-    await rejectionOf(host.setConfigOption(sessionId, 'x', { value: 'y' })),
-  ).toMatchObject({ code: 'acpjs/capability-unsupported' })
-  await host.deleteSession(agentId, sessionId)
-  expect(host.getSession(sessionId)).toBeUndefined()
-})
-
-test('capability-gated methods pass through when declared', async () => {
-  const host = trackHost(createAcpHost())
-  const { definition } = await fixtureDefinition({
-    initialize: {
-      agentCapabilities: {
-        sessionCapabilities: { list: {}, resume: {}, close: {}, delete: {} },
-      },
-    },
-    session: {
-      sessionId: 'sess-caps',
-      modes: {
-        currentModeId: 'code',
-        availableModes: [
-          { id: 'code', name: 'Code' },
-          { id: 'plan', name: 'Plan' },
-        ],
-      },
-      configOptions: [
-        {
-          type: 'boolean',
-          id: 'verbose',
-          name: 'Verbose',
-          currentValue: false,
-        },
-      ],
-    },
-    listSessions: {
-      sessions: [{ sessionId: 'sess-caps', cwd: '/tmp' }],
-      nextCursor: 'cursor-2',
-    },
-    setConfigOption: {
-      configOptions: [
-        { type: 'boolean', id: 'verbose', name: 'Verbose', currentValue: true },
-      ],
-    },
-  })
-  const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
-  if (created.status !== 'active') throw new Error('expected active')
-  const sessionId = created.sessionId
-  const events = collectEvents(host, sessionId) as AcpSessionEvent[]
-
-  const listed = await host.listSessions(agent.agentId)
-  expect(listed.sessions).toEqual([{ sessionId: 'sess-caps', cwd: '/tmp' }])
-  expect(listed.nextCursor).toBe('cursor-2')
-
-  await expect(host.setMode(sessionId, 'plan')).rejects.toMatchObject({
-    code: 'acpjs/capability-unsupported',
-  })
-
-  const configOptions = await host.setConfigOption(sessionId, 'verbose', {
-    type: 'boolean',
-    value: true,
-  })
-  expect(configOptions).toEqual([
-    { type: 'boolean', id: 'verbose', name: 'Verbose', currentValue: true },
-  ])
-  const configEvent = events.findLast(
-    (event) => event.type === 'config-options-update',
-  )
-  expect(configEvent?.payload).toEqual({ configOptions })
-
-  await host.resumeSession(agent.agentId, sessionId, resumeParams('/tmp'))
-  expect(host.getSession(sessionId)?.status).toBe('active')
-
-  await host.deleteSession(agent.agentId, sessionId)
-  expect(host.getSession(sessionId)).toBeUndefined()
-})
-
-test('closeSession forwards protocol session/close when the agent declares the capability', async () => {
-  const host = trackHost(createAcpHost())
-  const { definition } = await fixtureDefinition({
-    initialize: {
-      agentCapabilities: { sessionCapabilities: { close: {} } },
-    },
-  })
-  const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
-  if (created.status !== 'active') throw new Error('expected active')
-
-  await host.closeSession(created.sessionId)
-
-  expect(host.getSession(created.sessionId)?.status).toBe('closed')
-})
-
-test('createSession publishes a session-updated projection with sessionId, agentId, cwd and active status', async () => {
-  const host = trackHost(createAcpHost())
-  const hostEvents = collectEvents(host, undefined)
-  const { definition } = await fixtureDefinition({
-    session: { sessionId: 'sess-announce' },
-  })
-  const agent = await host.spawnAgent(definition)
-
-  await host.createSession(agent.agentId, sessionParams('/tmp'))
-
-  const projection = hostEvents.find(
-    (event) =>
-      event.type === 'session-updated' &&
-      event.payload.sessionId === 'sess-announce',
-  )
-  expect(projection?.payload).toMatchObject({
-    sessionId: 'sess-announce',
-    agentId: agent.agentId,
-    cwd: '/tmp',
-    status: 'active',
-  })
-})
-
-test('closeSession publishes a closed session-updated projection', async () => {
-  const { host, agentId, sessionId } = await activeSession({
-    initialize: {
-      agentCapabilities: { sessionCapabilities: { close: {} } },
-    },
-  })
-  const hostEvents = collectEvents(host, undefined)
-
-  await host.closeSession(sessionId)
-
-  const projection = hostEvents.find(
-    (event) =>
-      event.type === 'session-updated' &&
-      event.payload.sessionId === sessionId &&
-      event.payload.status === 'closed',
-  )
-  expect(projection?.payload).toMatchObject({
-    sessionId,
-    agentId,
-    status: 'closed',
-  })
-})
-
-test('deleteSession publishes a deleted session-updated projection', async () => {
-  const host = trackHost(createAcpHost())
-  const { definition } = await fixtureDefinition({
-    initialize: {
-      agentCapabilities: { sessionCapabilities: { delete: {} } },
-    },
-    session: { sessionId: 'sess-delete' },
-  })
-  const agent = await host.spawnAgent(definition)
-  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
-  if (created.status !== 'active') throw new Error('expected active')
-  const hostEvents = collectEvents(host, undefined)
-
-  await host.deleteSession(agent.agentId, 'sess-delete')
-
-  const projection = hostEvents.find(
-    (event) =>
-      event.type === 'session-updated' &&
-      event.payload.sessionId === 'sess-delete' &&
-      event.payload.status === 'deleted',
-  )
-  expect(projection?.payload).toMatchObject({
-    sessionId: 'sess-delete',
-    agentId: agent.agentId,
-    status: 'deleted',
-  })
 })

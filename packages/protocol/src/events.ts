@@ -17,9 +17,9 @@ import type {
 } from '@agentclientprotocol/sdk'
 
 import type { SessionStatus } from './domain'
-import type { AgentSnapshotWire, SessionSnapshotWire } from './snapshots'
+import type { AgentSnapshot, SessionSnapshot } from './snapshots'
 
-export type AcpEventExtensions = Record<string, unknown>
+export type AcpjsEventExtensions = Record<string, unknown>
 
 type Normalized<T> = Omit<T, '_meta'>
 
@@ -27,14 +27,14 @@ interface SessionEventBase {
   sessionId: string
   seq: number
   ts: number
-  extensions?: AcpEventExtensions
+  extensions?: AcpjsEventExtensions
 }
 
 interface HostEventBase {
   agentId: string
   seq: number
   ts: number
-  extensions?: AcpEventExtensions
+  extensions?: AcpjsEventExtensions
 }
 
 export interface SessionConfigInitPayload {
@@ -45,7 +45,6 @@ export interface SessionConfigInitPayload {
 export interface PromptFinishedPayload {
   stopReason: StopReason
   usage?: Usage
-  error?: { code: number; message: string; data?: unknown }
 }
 
 export interface SessionStatusChangePayload {
@@ -216,7 +215,7 @@ export interface UnrecognizedUpdateEvent extends SessionEventBase {
 
 export interface AgentUpdatedEvent extends HostEventBase {
   type: 'agent-updated'
-  payload: AgentSnapshotWire
+  payload: AgentSnapshot
 }
 
 export interface AgentRemovedEvent extends HostEventBase {
@@ -235,15 +234,15 @@ export interface DiagnosticEvent {
   ts: number
   type: 'diagnostic'
   payload: DiagnosticPayload
-  extensions?: AcpEventExtensions
+  extensions?: AcpjsEventExtensions
 }
 
 export interface SessionUpdatedEvent {
   seq: number
   ts: number
   type: 'session-updated'
-  payload: SessionSnapshotWire
-  extensions?: AcpEventExtensions
+  payload: SessionSnapshot
+  extensions?: AcpjsEventExtensions
 }
 
 export interface PermissionUpdatedEvent {
@@ -251,10 +250,10 @@ export interface PermissionUpdatedEvent {
   ts: number
   type: 'permission-updated'
   payload: HostPermissionSnapshot
-  extensions?: AcpEventExtensions
+  extensions?: AcpjsEventExtensions
 }
 
-export type AcpSessionEvent =
+export type AcpjsSessionEvent =
   | UserMessageChunkEvent
   | AgentMessageChunkEvent
   | AgentThoughtChunkEvent
@@ -275,14 +274,14 @@ export type AcpSessionEvent =
   | TerminalOutputEvent
   | UnrecognizedUpdateEvent
 
-export type AcpHostProjectionEvent =
+export type AcpjsHostProjectionEvent =
   | AgentUpdatedEvent
   | AgentRemovedEvent
   | SessionUpdatedEvent
   | PermissionUpdatedEvent
 
-export type AcpHostTelemetryEvent = InstallProgressEvent | DiagnosticEvent
+export type AcpjsHostTelemetryEvent = InstallProgressEvent | DiagnosticEvent
 
-export type AcpHostEvent = AcpHostProjectionEvent | AcpHostTelemetryEvent
+export type AcpjsHostEvent = AcpjsHostProjectionEvent | AcpjsHostTelemetryEvent
 
-export type AcpEvent = AcpSessionEvent | AcpHostEvent
+export type AcpjsEvent = AcpjsSessionEvent | AcpjsHostEvent

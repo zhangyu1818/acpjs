@@ -12,7 +12,7 @@ import type {
   ToolCallUpdate,
 } from '@agentclientprotocol/sdk'
 
-import type { AcpEvent } from './events'
+import type { AcpjsEvent } from './events'
 
 function isPlainText(
   block: ContentBlock,
@@ -81,7 +81,7 @@ function appendChunk(
   }
 }
 
-export function reduce(state: SessionState, event: AcpEvent): SessionState {
+export function reduce(state: SessionState, event: AcpjsEvent): SessionState {
   switch (event.type) {
     case 'user-message-chunk': {
       return appendChunk(state, 'user', event.payload, event.seq)
@@ -186,7 +186,6 @@ export function reduce(state: SessionState, event: AcpEvent): SessionState {
         ...state,
         lastStopReason: payload.stopReason,
         lastTurnUsage: payload.usage ?? null,
-        lastPromptError: payload.error ?? null,
       }
     }
     case 'session-status-change': {

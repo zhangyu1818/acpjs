@@ -2,13 +2,13 @@ import { expect, test } from 'vitest'
 
 import { chunk, run, text } from './test-support'
 
-import type { AcpEvent } from './index'
+import type { AcpjsEvent } from './index'
 
 function imageChunk(
   type: 'agent-message-chunk',
   messageId: string,
   seq: number,
-): AcpEvent {
+): AcpjsEvent {
   return {
     sessionId: 'sess-1',
     seq,

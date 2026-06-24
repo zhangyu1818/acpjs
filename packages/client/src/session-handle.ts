@@ -1,16 +1,16 @@
 import {
-  ACPJS_HOST_RPC_METHODS,
+  ACPJS_HOST_METHODS,
   type ContentBlock,
   type PromptFinishedPayload,
   type SessionConfigOption,
 } from '@acpjs/protocol'
 
-import type { RpcCall } from './internal.ts'
+import type { HostCall } from './internal.ts'
 import type { SessionStore, StateListener } from './store.ts'
 import type { AcpSession, SessionConfigValue } from './types.ts'
 
 export function createSessionHandle(
-  call: RpcCall,
+  call: HostCall,
   store: SessionStore,
   onEvent: AcpSession['onEvent'],
 ): AcpSession {
@@ -21,25 +21,25 @@ export function createSessionHandle(
     subscribe: (listener: StateListener) => store.subscribe(listener),
     onEvent,
     async prompt(blocks: ContentBlock[]): Promise<PromptFinishedPayload> {
-      return (await call(ACPJS_HOST_RPC_METHODS.prompt, {
+      return (await call(ACPJS_HOST_METHODS.prompt, {
         sessionId,
         prompt: blocks,
       })) as PromptFinishedPayload
     },
     async cancel(): Promise<void> {
-      await call(ACPJS_HOST_RPC_METHODS.cancel, { sessionId })
+      await call(ACPJS_HOST_METHODS.cancel, { sessionId })
     },
     async close(): Promise<void> {
-      await call(ACPJS_HOST_RPC_METHODS.closeSession, { sessionId })
+      await call(ACPJS_HOST_METHODS.closeSession, { sessionId })
     },
     async setMode(modeId: string): Promise<void> {
-      await call(ACPJS_HOST_RPC_METHODS.setMode, { sessionId, modeId })
+      await call(ACPJS_HOST_METHODS.setMode, { sessionId, modeId })
     },
     async setConfigOption(
       configId: string,
       value: SessionConfigValue,
     ): Promise<SessionConfigOption[]> {
-      return (await call(ACPJS_HOST_RPC_METHODS.setConfigOption, {
+      return (await call(ACPJS_HOST_METHODS.setConfigOption, {
         sessionId,
         configId,
         value,

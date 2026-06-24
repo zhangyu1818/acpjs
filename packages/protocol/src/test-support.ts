@@ -1,5 +1,5 @@
 import {
-  type AcpEvent,
+  type AcpjsEvent,
   createInitialSessionState,
   reduce,
   type SessionState,
@@ -8,7 +8,7 @@ import {
 
 import type { ContentBlock } from '@agentclientprotocol/sdk'
 
-export function run(events: AcpEvent[], sessionId = 'sess-1'): SessionState {
+export function run(events: AcpjsEvent[], sessionId = 'sess-1'): SessionState {
   let state = createInitialSessionState(sessionId)
   for (const event of events) state = reduce(state, event)
   return state
@@ -23,7 +23,7 @@ export function chunk(
   value: string,
   messageId?: string,
   seq = 1,
-): AcpEvent {
+): AcpjsEvent {
   return {
     sessionId: 'sess-1',
     seq,
@@ -40,7 +40,7 @@ export function statusEvent(
   status: SessionStatus,
   seq: number,
   extra?: { resumed?: boolean },
-): AcpEvent {
+): AcpjsEvent {
   return {
     sessionId: 'sess-1',
     seq,

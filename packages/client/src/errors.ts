@@ -1,12 +1,12 @@
 import {
-  ACP_ERROR_CODES,
-  isAcpErrorCode,
-  type AcpErrorCode,
+  ACPJS_ERROR_CODES,
+  isAcpjsErrorCode,
+  type AcpjsErrorCode,
   type ErrorObject,
 } from '@acpjs/protocol'
 
 export class AcpClientError extends Error {
-  code: AcpErrorCode
+  code: AcpjsErrorCode
   data: unknown
   retryable: boolean
 
@@ -21,7 +21,7 @@ export class AcpClientError extends Error {
 
 export function transportClosedError(): ErrorObject {
   return {
-    code: ACP_ERROR_CODES.transportClosed,
+    code: ACPJS_ERROR_CODES.transportClosed,
     message: 'transport is closed',
     retryable: true,
   }
@@ -35,7 +35,7 @@ function asErrorObject(value: unknown): ErrorObject | undefined {
     data?: unknown
     retryable?: unknown
   }
-  if (typeof candidate.code !== 'string' || !isAcpErrorCode(candidate.code)) {
+  if (typeof candidate.code !== 'string' || !isAcpjsErrorCode(candidate.code)) {
     return undefined
   }
   return {
@@ -57,7 +57,7 @@ export function toClientError(value: unknown): AcpClientError {
         ? value
         : 'unknown error'
   return new AcpClientError({
-    code: ACP_ERROR_CODES.agentError,
+    code: ACPJS_ERROR_CODES.agentError,
     message,
     retryable: false,
   })

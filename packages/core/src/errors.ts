@@ -1,12 +1,12 @@
-import { ACP_ERROR_CODES, type AcpErrorCode } from '@acpjs/protocol'
+import { ACPJS_ERROR_CODES, type AcpjsErrorCode } from '@acpjs/protocol'
 
 export class AcpError extends Error {
-  code: AcpErrorCode
+  code: AcpjsErrorCode
   data: unknown
   retryable: boolean
 
   constructor(
-    code: AcpErrorCode,
+    code: AcpjsErrorCode,
     message: string,
     options: { data?: unknown; retryable?: boolean } = {},
   ) {
@@ -19,5 +19,5 @@ export class AcpError extends Error {
 }
 
 export function configInvalid(message: string, data?: unknown): AcpError {
-  return new AcpError(ACP_ERROR_CODES.configInvalid, message, { data })
+  return new AcpError(ACPJS_ERROR_CODES.configInvalid, message, { data })
 }

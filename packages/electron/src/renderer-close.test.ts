@@ -50,7 +50,11 @@ test('unsubscribe is idempotent and only releases the endpoint subscription once
 
   unsubscribe()
   expect(() => unsubscribe()).not.toThrow()
-  await rig.transport.request({ id: 'rpc-flush', method: 'noop', params: {} })
+  await rig.transport.request({
+    id: 'host-flush',
+    method: 'sessions/cancel',
+    params: {},
+  })
 
   expect(rig.fake.subscriptions).toHaveLength(1)
   expect(rig.fake.subscriptions[0]?.active).toBe(false)
@@ -74,8 +78,8 @@ test('the wire ignores duplicate subscribe messages for the same subId', async (
     params: { fromSeq: 5 },
   })
   channel.port2.postMessage({
-    t: 'rpc',
-    request: { id: 'flush', method: 'noop', params: {} },
+    t: 'request',
+    request: { id: 'flush', method: 'sessions/cancel', params: {} },
   })
 
   await vi.waitFor(() => expect(fake.requests).toHaveLength(1))

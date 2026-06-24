@@ -1,9 +1,9 @@
 import type { McpServer } from '@agentclientprotocol/sdk'
 
 import type { SessionStatus } from './domain'
-import type { AgentSnapshotWire, SessionSnapshotWire } from './snapshots'
+import type { AgentSnapshot, SessionSnapshot } from './snapshots'
 
-export const ACPJS_HOST_RPC_METHODS = Object.freeze({
+export const ACPJS_HOST_METHODS = Object.freeze({
   spawnAgent: 'agents/spawn',
   createSession: 'sessions/create',
   loadSession: 'sessions/load',
@@ -21,8 +21,8 @@ export const ACPJS_HOST_RPC_METHODS = Object.freeze({
   disposeAgent: 'agents/dispose',
 } as const)
 
-export type AcpRpcMethod =
-  (typeof ACPJS_HOST_RPC_METHODS)[keyof typeof ACPJS_HOST_RPC_METHODS]
+export type AcpjsHostMethod =
+  (typeof ACPJS_HOST_METHODS)[keyof typeof ACPJS_HOST_METHODS]
 
 export interface AgentDefinition {
   id: string
@@ -61,4 +61,4 @@ export interface ResumeSessionParams {
   additionalDirectories: string[]
 }
 
-export type { AgentSnapshotWire, SessionSnapshotWire }
+export type { AgentSnapshot, SessionSnapshot }

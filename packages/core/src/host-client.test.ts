@@ -1,12 +1,19 @@
+import {
+  agent as createAgentApp,
+  methods,
+  type ClientRequestResponsesByMethod,
+} from '@agentclientprotocol/sdk'
 import { expect, test } from 'vitest'
 
 import { createAgentClient } from './host-client.ts'
 
 type CreateAgentClientContext = Parameters<typeof createAgentClient>[0]
+type TerminalCreateResponse =
+  ClientRequestResponsesByMethod[typeof methods.client.terminal.create]
 
 function terminalStub() {
   return {
-    async createTerminal() {
+    async createTerminal(): Promise<TerminalCreateResponse> {
       return { terminalId: 't1' }
     },
     async terminalOutput() {
@@ -40,52 +47,85 @@ function contextWithTwoSessions(): CreateAgentClientContext {
 }
 
 test('host rejects terminal access from a session that does not own the terminal', async () => {
-  const client = createAgentClient(contextWithTwoSessions(), 'agent-1')
-  const {
-    createTerminal,
-    terminalOutput,
-    waitForTerminalExit,
-    killTerminal,
-    releaseTerminal,
-  } = client
-  if (
-    !createTerminal ||
-    !terminalOutput ||
-    !waitForTerminalExit ||
-    !killTerminal ||
-    !releaseTerminal
-  ) {
-    throw new Error('terminal methods were not installed')
-  }
+  const clientApp = createAgentClient(contextWithTwoSessions(), 'agent-1')
+  const agentApp = createAgentApp({
+    name: '@acpjs/core-host-client-test',
+  }).onRequest(methods.agent.session.prompt, async ({ client }) => {
+    const created = await client.request(methods.client.terminal.create, {
+      sessionId: 'A',
+      command: 'x',
+    })
 
-  const created = await createTerminal({ sessionId: 'A', command: 'x' })
-  expect(created.terminalId).toBe('t1')
+    await expect(
+      client.request(methods.client.terminal.output, {
+        sessionId: 'A',
+        terminalId: created.terminalId,
+      }),
+    ).resolves.toBeDefined()
 
-  // The owning session can use the terminal.
-  await expect(
-    terminalOutput({ sessionId: 'A', terminalId: 't1' }),
-  ).resolves.toBeDefined()
+    await expect(
+      client.request(methods.client.terminal.output, {
+        sessionId: 'B',
+        terminalId: created.terminalId,
+      }),
+    ).rejects.toMatchObject({
+      code: -32602,
+      message: expect.stringContaining('belongs to another session'),
+    })
+    await expect(
+      client.request(methods.client.terminal.waitForExit, {
+        sessionId: 'B',
+        terminalId: created.terminalId,
+      }),
+    ).rejects.toMatchObject({ code: -32602 })
+    await expect(
+      client.request(methods.client.terminal.kill, {
+        sessionId: 'B',
+        terminalId: created.terminalId,
+      }),
+    ).rejects.toMatchObject({ code: -32602 })
+    await expect(
+      client.request(methods.client.terminal.release, {
+        sessionId: 'B',
+        terminalId: created.terminalId,
+      }),
+    ).rejects.toMatchObject({ code: -32602 })
 
-  // A sibling session under the same agent cannot touch another session's
-  // terminal across any read/control op.
-  await expect(
-    terminalOutput({ sessionId: 'B', terminalId: 't1' }),
-  ).rejects.toMatchObject({
-    code: -32602,
-    message: expect.stringContaining('belongs to another session'),
+    await expect(
+      client.request(methods.client.terminal.release, {
+        sessionId: 'A',
+        terminalId: created.terminalId,
+      }),
+    ).resolves.toBeDefined()
+    await expect(
+      client.request(methods.client.terminal.output, {
+        sessionId: 'A',
+        terminalId: created.terminalId,
+      }),
+    ).rejects.toMatchObject({
+      code: -32602,
+      message: expect.stringContaining('unknown terminal'),
+    })
+    await expect(
+      client.request(methods.client.terminal.output, {
+        sessionId: 'A',
+        terminalId: 'missing',
+      }),
+    ).rejects.toMatchObject({
+      code: -32602,
+      message: expect.stringContaining('unknown terminal'),
+    })
+    return { stopReason: 'end_turn' }
   })
-  await expect(
-    waitForTerminalExit({ sessionId: 'B', terminalId: 't1' }),
-  ).rejects.toMatchObject({ code: -32602 })
-  await expect(
-    killTerminal({ sessionId: 'B', terminalId: 't1' }),
-  ).rejects.toMatchObject({ code: -32602 })
-  await expect(
-    releaseTerminal({ sessionId: 'B', terminalId: 't1' }),
-  ).rejects.toMatchObject({ code: -32602 })
-
-  // The owner can still release it.
-  await expect(
-    releaseTerminal({ sessionId: 'A', terminalId: 't1' }),
-  ).resolves.toBeDefined()
+  const connection = clientApp.connect(agentApp)
+  try {
+    await expect(
+      connection.agent.request(methods.agent.session.prompt, {
+        sessionId: 'A',
+        prompt: [{ type: 'text', text: 'go' }],
+      }),
+    ).resolves.toEqual({ stopReason: 'end_turn' })
+  } finally {
+    connection.close()
+  }
 })

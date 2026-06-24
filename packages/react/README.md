@@ -141,7 +141,7 @@ function NewSession({ agent }: { agent: AcpAgent }) {
 
 ## Public API (sealed surface)
 
-The export surface is exactly ten values (pinned by an API snapshot test): `AcpProvider`, `useAcpClient`, `useAgent`, `useAgents`, `useConnectionStatus`, `useDiagnostics`, `usePermissionRequests`, `useSession`, `useSessions`, and the `shallowEqual` helper. Every read hook accepts an optional pure-projection `(selector, isEqual?)` (see [Selecting a slice](#selecting-a-slice)), but there is still no raw subscription, no raw protocol-notification subscribe, no raw event/event-log handle, and no raw RPC. A selector is a pure projection of already-public snapshot data — it is not an escape hatch.
+The export surface is exactly ten values (pinned by an API snapshot test): `AcpProvider`, `useAcpClient`, `useAgent`, `useAgents`, `useConnectionStatus`, `useDiagnostics`, `usePermissionRequests`, `useSession`, `useSessions`, and the `shallowEqual` helper. Every read hook accepts an optional pure-projection `(selector, isEqual?)` (see [Selecting a slice](#selecting-a-slice)), but there is still no raw subscription, no raw protocol-notification subscribe, no raw event/event-log handle, and no raw host-envelope send. A selector is a pure projection of already-public snapshot data — it is not an escape hatch.
 
 - `<AcpProvider client={client}>`: injects the `AcpClient` into the subtree. Using any hook outside the Provider throws a clear error pointing back to `AcpProvider`.
 - `useAcpClient(): AcpClient`: returns the client injected by the Provider.
@@ -159,7 +159,7 @@ The export surface is exactly ten values (pinned by an API snapshot test): `AcpP
 Every read hook — `useAgents`, `useSessions`, `useConnectionStatus`, `usePermissionRequests`, `useDiagnostics`, `useAgent`, `useSession` — accepts an optional `(selector, isEqual?)`. With no selector the hook returns the full snapshot. With a selector the hook returns the projection and re-renders only when the projected value changes by the equality function.
 
 - `useAgents`, `useSessions`, `useConnectionStatus`, `usePermissionRequests`, `useDiagnostics` project their snapshot directly into the hook's return value.
-- `useAgent(agentId, selector?)`'s selector projects the agent **snapshot** (`AgentSnapshotWire | undefined`). With no selector the hook still returns the `AcpAgent` handle.
+- `useAgent(agentId, selector?)`'s selector projects the agent **snapshot** (`AgentSnapshot | undefined`). With no selector the hook still returns the `AcpAgent` handle.
 - `useSession(sessionId, selector?)`'s selector projects the `SessionState`; the projection becomes the `.state` field of the returned `UseSessionResult` (the action methods are unchanged). The hook is still `undefined` until the session is known, and the selector never runs over a missing state.
 
 Default equality is `Object.is`. Selecting a whole top-level slice or a bare primitive needs no `isEqual`. Selector identity does not need to be stable — an inline arrow is safe; the underlying React shim (`useSyncExternalStoreWithSelector`) re-derives on selector-identity change but returns the previous reference when the equality function holds, so there is no infinite render loop and no need to `useMemo` the selector.
@@ -189,7 +189,7 @@ const agentMsgs = useSession(
 - Reference stability: with no new event, a re-render returns the same object reference. Snapshots reuse the client store's cached immutable references directly, so multiple hooks observing the same session get a reference-equal `state`.
 - Unmount unsubscribes from all store subscriptions.
 - A `usePermissionRequests` element's `respond` may reject with `acpjs/already-answered` under a multi-endpoint race (another endpoint already answered and the list has converged). Consumers must catch and ignore that code.
-- Auth/login is not modeled by acpjs. Agent-side authentication failures during create/load/resume surface as agent errors; prompt-time agent JSON-RPC errors appear in `PromptFinishedPayload.error`. Configure or log in to the local agent outside acpjs and retry.
+- Auth/login is not modeled by acpjs. Agent-side authentication failures during create/load/resume/prompt surface as agent errors. Configure or log in to the local agent outside acpjs and retry.
 
 ## Implementation-defined decisions
 

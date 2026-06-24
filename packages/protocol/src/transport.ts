@@ -1,6 +1,7 @@
-import type { AcpEvent } from './events'
+import type { AcpjsEvent } from './events'
+import type { AcpjsHostMethod } from './host-methods'
 
-export const ACP_ERROR_CODES = Object.freeze({
+export const ACPJS_ERROR_CODES = Object.freeze({
   configInvalid: 'acpjs/config-invalid',
   promptInFlight: 'acpjs/prompt-in-flight',
   alreadyAnswered: 'acpjs/already-answered',
@@ -11,31 +12,31 @@ export const ACP_ERROR_CODES = Object.freeze({
   transportClosed: 'acpjs/transport-closed',
 } as const)
 
-export type AcpErrorCode =
-  (typeof ACP_ERROR_CODES)[keyof typeof ACP_ERROR_CODES]
+export type AcpjsErrorCode =
+  (typeof ACPJS_ERROR_CODES)[keyof typeof ACPJS_ERROR_CODES]
 
 const errorCodeValues: ReadonlySet<string> = new Set(
-  Object.values(ACP_ERROR_CODES),
+  Object.values(ACPJS_ERROR_CODES),
 )
 
-export function isAcpErrorCode(value: string): value is AcpErrorCode {
+export function isAcpjsErrorCode(value: string): value is AcpjsErrorCode {
   return errorCodeValues.has(value)
 }
 
 export interface ErrorObject {
-  code: AcpErrorCode
+  code: AcpjsErrorCode
   message: string
   data?: unknown
   retryable: boolean
 }
 
-export interface RpcRequest {
+export interface HostRequest {
   id: string
-  method: string
+  method: AcpjsHostMethod
   params: Record<string, unknown>
 }
 
-export type RpcResponse =
+export type HostResponse =
   | { id: string; ok: true; result: unknown }
   | { id: string; ok: false; error: ErrorObject }
 
@@ -52,48 +53,51 @@ export interface InboundResponse {
   result: unknown
 }
 
-export type TransportConnectionStatus = 'connecting' | 'connected' | 'closed'
+export type HostClientTransportConnectionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'closed'
 
-export interface TransportLifecycleEvent {
-  status: TransportConnectionStatus
+export interface HostClientTransportLifecycleEvent {
+  status: HostClientTransportConnectionStatus
   error?: ErrorObject
 }
 
-export interface TransportSubscribeParams {
+export interface HostClientTransportSubscribeParams {
   sessionId?: string
   fromSeq: number
 }
 
-export type TransportUnsubscribe = () => void
+export type HostClientTransportUnsubscribe = () => void
 
-export interface TransportHandlers {
+export interface HostClientTransportHandlers {
   onInboundRequest: (request: InboundRequest) => void
-  onLifecycle: (event: TransportLifecycleEvent) => void
+  onLifecycle: (event: HostClientTransportLifecycleEvent) => void
   onSubscriptionError?: (
-    params: TransportSubscribeParams,
+    params: HostClientTransportSubscribeParams,
     error: ErrorObject,
   ) => void
 }
 
 export interface EnvelopeEndpoint {
-  request: (request: RpcRequest) => Promise<RpcResponse>
+  request: (request: HostRequest) => Promise<HostResponse>
   subscribe: (
-    params: TransportSubscribeParams,
-    onEvent: (event: AcpEvent) => void,
-  ) => TransportUnsubscribe
+    params: HostClientTransportSubscribeParams,
+    onEvent: (event: AcpjsEvent) => void,
+  ) => HostClientTransportUnsubscribe
   onInboundRequest: (
     handler: (request: InboundRequest) => void,
-  ) => TransportUnsubscribe
+  ) => HostClientTransportUnsubscribe
   respondInbound: (response: InboundResponse) => Promise<void>
 }
 
-export interface Transport {
-  connect: (handlers: TransportHandlers) => Promise<void>
-  request: (request: RpcRequest) => Promise<RpcResponse>
+export interface HostClientTransport {
+  connect: (handlers: HostClientTransportHandlers) => Promise<void>
+  request: (request: HostRequest) => Promise<HostResponse>
   subscribe: (
-    params: TransportSubscribeParams,
-    onEvent: (event: AcpEvent) => void,
-  ) => TransportUnsubscribe
+    params: HostClientTransportSubscribeParams,
+    onEvent: (event: AcpjsEvent) => void,
+  ) => HostClientTransportUnsubscribe
   respondInbound: (response: InboundResponse) => Promise<void>
   close: () => Promise<void>
 }

@@ -12,13 +12,13 @@ import {
   waitFor,
 } from './test-harness.ts'
 
-import type { AcpEvent } from '@acpjs/protocol'
+import type { AcpjsEvent } from '@acpjs/protocol'
 
-function statuses(events: AcpEvent[]): string[] {
+function statuses(events: AcpjsEvent[]): string[] {
   return agentStatusPayloads(events).map((payload) => payload.status)
 }
 
-function exitReason(events: AcpEvent[]): string | undefined {
+function exitReason(events: AcpjsEvent[]): string | undefined {
   return agentStatusPayloads(events).find(
     (payload) => payload.status === 'exited',
   )?.reason
@@ -188,6 +188,46 @@ test('dispose kills a slow agent with SIGKILL after the injected kill timeout', 
   expect(await pending).toMatchObject({ code: 'acpjs/agent-exited' })
   expect(host.getAgent(agent.agentId)?.status).toBe('exited')
   expect(host.getAgent(agent.agentId)?.reason).toBe('disposed')
+})
+
+test('connection close without process exit marks the agent down and rejects the prompt', async () => {
+  const host = trackHost(createAcpHost({ killTimeoutMs: 25 }))
+  const events = collectEvents(host, undefined)
+  const { definition } = await fixtureDefinition({
+    session: { sessionId: 'sess-disconnect' },
+    turns: [
+      {
+        steps: [
+          {
+            kind: 'update',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'started' },
+            },
+          },
+          { kind: 'disconnect' },
+          { kind: 'sleep', ms: 60_000 },
+        ],
+      },
+    ],
+  })
+  const agent = await host.spawnAgent(definition)
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
+  if (created.status !== 'active') throw new Error('expected active')
+  const sessionEvents = collectEvents(host, created.sessionId)
+
+  const pending = rejectionOf(
+    host.prompt(created.sessionId, [{ type: 'text', text: 'go' }]),
+  )
+  await waitFor(() =>
+    sessionEvents.some((event) => event.type === 'agent-message-chunk'),
+  )
+
+  expect(await pending).toMatchObject({ code: 'acpjs/agent-exited' })
+  await waitFor(() => host.getAgent(agent.agentId)?.status === 'exited')
+  expect(host.getAgent(agent.agentId)?.reason).toBe('crashed')
+  expect(host.getSession(created.sessionId)?.status).toBe('disconnected')
+  expect(diagnosticPayloads(events, 'agent/connection-closed')).toHaveLength(1)
 })
 
 test('getAgents returns a snapshot for every spawned agent including status', async () => {

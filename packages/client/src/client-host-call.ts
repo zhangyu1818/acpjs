@@ -1,17 +1,17 @@
 import { AcpClientError, toClientError } from './errors.ts'
 
-import type { Transport } from '@acpjs/protocol'
+import type { AcpjsHostMethod, HostClientTransport } from '@acpjs/protocol'
 
-import type { RpcCall } from './internal.ts'
+import type { HostCall } from './internal.ts'
 
-export function createRpcCaller(options: {
+export function createHostCaller(options: {
   ensureOpen: () => void
   connected: () => Promise<void>
-  request: Transport['request']
-}): RpcCall {
-  let rpcCounter = 0
+  request: HostClientTransport['request']
+}): HostCall {
+  let requestCounter = 0
   return async function call(
-    method: string,
+    method: AcpjsHostMethod,
     params: Record<string, unknown>,
   ): Promise<unknown> {
     options.ensureOpen()
@@ -21,11 +21,11 @@ export function createRpcCaller(options: {
       throw toClientError(error)
     }
     options.ensureOpen()
-    rpcCounter += 1
+    requestCounter += 1
     let response
     try {
       response = await options.request({
-        id: `rpc-${rpcCounter}`,
+        id: `host-${requestCounter}`,
         method,
         params,
       })

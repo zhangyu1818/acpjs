@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 
 import { chunk, run, text } from './test-support'
 
-import type { AcpEvent } from './index'
+import type { AcpjsEvent } from './index'
 
 test('a new message records the seq of the event that first created it', () => {
   const state = run([chunk('user-message-chunk', 'hi', 'u1', 7)])
@@ -58,7 +58,7 @@ test('a tool call update preserves the seq of the creating event', () => {
 })
 
 test('messages and tool calls can be merged into a single timeline by seq', () => {
-  const events: AcpEvent[] = [
+  const events: AcpjsEvent[] = [
     chunk('user-message-chunk', 'do it', 'u1', 1),
     {
       sessionId: 'sess-1',

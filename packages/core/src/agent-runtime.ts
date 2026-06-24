@@ -1,15 +1,17 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 
-import { ACP_ERROR_CODES, type AgentExitReason } from '@acpjs/protocol'
+import { ACPJS_ERROR_CODES, type AgentExitReason } from '@acpjs/protocol'
 import {
-  ClientSideConnection,
+  methods,
   ndJsonStream,
   PROTOCOL_VERSION,
-  type Client,
+  type ClientApp,
+  type ClientConnection,
   type ClientCapabilities,
 } from '@agentclientprotocol/sdk'
 
+import { disposeAgentProcess } from './agent-runtime-dispose.ts'
 import { AcpError } from './errors.ts'
 import {
   requireReadyAgent,
@@ -24,7 +26,7 @@ export interface AgentRuntimeDeps {
   options: ResolvedHostOptions
   bus: EventBus
   clientCapabilities: ClientCapabilities
-  createClient: (handle: AgentHandle) => Client
+  createClientApp: (handle: AgentHandle) => ClientApp
   onAgentDown: (handle: AgentHandle) => void
   onAgentReady: (handle: AgentHandle) => void
   isHostDisposed: () => boolean
@@ -61,7 +63,7 @@ export class AgentRuntime {
 
   requireReady(agentId: string | undefined): {
     handle: AgentHandle
-    conn: ClientSideConnection
+    conn: ClientConnection
   } {
     return requireReadyAgent(this.agents, agentId)
   }
@@ -92,7 +94,7 @@ export class AgentRuntime {
       })
       this.#down(handle, 'spawn-failed')
       throw new AcpError(
-        ACP_ERROR_CODES.agentExited,
+        ACPJS_ERROR_CODES.agentExited,
         `agent ${handle.agentId} failed to spawn`,
       )
     }
@@ -132,21 +134,22 @@ export class AgentRuntime {
     if (!stdin || !stdout) {
       proc.kill()
       this.#down(handle, 'initialize-failed')
-      throw new AcpError(ACP_ERROR_CODES.agentExited, 'agent stdio unavailable')
+      throw new AcpError(
+        ACPJS_ERROR_CODES.agentExited,
+        'agent stdio unavailable',
+      )
     }
     const stream = ndJsonStream(
       Writable.toWeb(stdin),
       Readable.toWeb(stdout) as ReadableStream<Uint8Array>,
     )
-    const conn = new ClientSideConnection(
-      () => this.#deps.createClient(handle),
-      stream,
-    )
+    const conn = this.#deps.createClientApp(handle).connect(stream)
     handle.conn = conn
+    void conn.closed.then(() => this.#onConnectionClosed(handle, conn, proc))
     try {
       const init = await this.track(
         handle,
-        conn.initialize({
+        conn.agent.request(methods.agent.initialize, {
           protocolVersion: PROTOCOL_VERSION,
           clientInfo: { name: '@acpjs/core', version: '0.0.0' },
           clientCapabilities: this.#deps.clientCapabilities,
@@ -154,7 +157,7 @@ export class AgentRuntime {
       )
       if (init.protocolVersion !== PROTOCOL_VERSION) {
         throw new AcpError(
-          ACP_ERROR_CODES.agentExited,
+          ACPJS_ERROR_CODES.agentExited,
           `unsupported protocol version: ${init.protocolVersion}`,
         )
       }
@@ -176,7 +179,7 @@ export class AgentRuntime {
       throw error instanceof AcpError
         ? error
         : new AcpError(
-            ACP_ERROR_CODES.agentExited,
+            ACPJS_ERROR_CODES.agentExited,
             `agent ${handle.agentId} failed to initialize`,
           )
     }
@@ -200,6 +203,42 @@ export class AgentRuntime {
     })
     for (const reject of handle.pendingRejects) reject()
     handle.pendingRejects.clear()
+    if (handle.disposed || this.#deps.isHostDisposed()) {
+      this.#deps.onAgentDown(handle)
+      if (handle.status !== 'exited') {
+        this.#deps.bus.setAgentStatus(handle, 'exited', 'disposed')
+      }
+      return
+    }
+    if (handle.status === 'ready') {
+      this.#down(handle, 'crashed')
+    } else if (handle.status === 'initializing') {
+      this.#down(handle, 'initialize-failed')
+    } else if (handle.status === 'spawning') {
+      this.#down(handle, 'spawn-failed')
+    }
+  }
+
+  #onConnectionClosed(
+    handle: AgentHandle,
+    conn: ClientConnection,
+    proc: ChildProcess,
+  ): void {
+    if (handle.conn !== conn) return
+    handle.conn = undefined
+    this.#deps.bus.diagnostic('warn', 'agent/connection-closed', {
+      message: 'agent connection closed',
+      agentId: handle.agentId,
+    })
+    for (const reject of handle.pendingRejects) reject()
+    handle.pendingRejects.clear()
+    if (
+      handle.proc === proc &&
+      proc.exitCode === null &&
+      proc.signalCode === null
+    ) {
+      proc.kill()
+    }
     if (handle.disposed || this.#deps.isHostDisposed()) {
       this.#deps.onAgentDown(handle)
       if (handle.status !== 'exited') {
@@ -262,46 +301,6 @@ export class AgentRuntime {
   }
 
   async dispose(handle: AgentHandle): Promise<void> {
-    handle.disposed = true
-    if (handle.restartTimer) {
-      clearTimeout(handle.restartTimer)
-      handle.restartTimer = undefined
-    }
-    const proc = handle.proc
-    if (!proc) {
-      if (handle.status !== 'exited') {
-        this.#deps.onAgentDown(handle)
-        this.#deps.bus.setAgentStatus(handle, 'exited', 'disposed')
-      }
-      return
-    }
-    const exited = new Promise<void>((resolvePromise) => {
-      proc.once('exit', () => resolvePromise())
-      if (proc.exitCode !== null || proc.signalCode !== null) resolvePromise()
-    })
-    proc.stdin?.end()
-    const timedOut = await new Promise<boolean>((resolvePromise) => {
-      const timer = setTimeout(
-        () => resolvePromise(true),
-        this.#deps.options.killTimeoutMs,
-      )
-      void exited.then(() => {
-        clearTimeout(timer)
-        resolvePromise(false)
-      })
-    })
-    if (timedOut) {
-      this.#deps.bus.diagnostic('warn', 'agent/kill', {
-        message: 'kill timeout exceeded, sending SIGKILL',
-        agentId: handle.agentId,
-      })
-      proc.kill('SIGKILL')
-      await Promise.race([
-        exited,
-        new Promise<void>((resolvePromise) =>
-          setTimeout(resolvePromise, this.#deps.options.killTimeoutMs),
-        ),
-      ])
-    }
+    await disposeAgentProcess(handle, this.#deps)
   }
 }

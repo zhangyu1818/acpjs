@@ -13,7 +13,7 @@ import {
   trackHost,
 } from './test-harness.ts'
 
-import type { AcpEvent } from '@acpjs/protocol'
+import type { AcpjsEvent } from '@acpjs/protocol'
 import type { SessionNotification } from '@agentclientprotocol/sdk'
 
 function chunkUpdate(text: string): SessionNotification['update'] {
@@ -72,7 +72,7 @@ test('events are appended to storage before subscriber dispatch (INV-1)', async 
   const observed: { storedAtDispatch: number; seq: number }[] = []
   const { host, sessionId } = await promptedSession(storage)
   host.subscribe(sessionId, 0, (event) => {
-    const stored = storage.loadEvents(sessionId) as AcpEvent[]
+    const stored = storage.loadEvents(sessionId) as AcpjsEvent[]
     observed.push({ storedAtDispatch: stored.length, seq: event.seq })
   })
 
@@ -87,7 +87,7 @@ test('events are appended to storage before subscriber dispatch (INV-1)', async 
 test('a throwing subscriber is isolated and reported as a diagnostic', async () => {
   const { host, sessionId } = await promptedSession()
   const hostEvents = collectEvents(host, undefined)
-  const received: AcpEvent[] = []
+  const received: AcpjsEvent[] = []
   host.subscribe(sessionId, 0, () => {
     throw new Error('subscriber exploded')
   })
@@ -108,7 +108,7 @@ test('a throwing host-stream subscriber is isolated during replay and reported a
   const { definition } = await fixtureDefinition({})
   await host.spawnAgent(definition)
 
-  const seen: AcpEvent[] = []
+  const seen: AcpjsEvent[] = []
   host.subscribe(undefined, 0, (event) => {
     seen.push(event)
     throw new Error('host replay boom')
@@ -140,7 +140,7 @@ test('late host-stream subscriber with fromSeq sees exactly the suffix (INV-2)',
 
 test('unsubscribe stops delivery', async () => {
   const { host, sessionId } = await promptedSession()
-  const events: AcpEvent[] = []
+  const events: AcpjsEvent[] = []
   const unsubscribe = host.subscribe(sessionId, 0, (event) =>
     events.push(event),
   )

@@ -4,10 +4,10 @@ import type {
 } from '@agentclientprotocol/sdk'
 
 import type {
-  AcpEvent,
-  AcpEventExtensions,
-  AcpHostEvent,
-  AcpSessionEvent,
+  AcpjsEvent,
+  AcpjsEventExtensions,
+  AcpjsHostEvent,
+  AcpjsSessionEvent,
 } from './index'
 
 const base = 1718000000000
@@ -16,22 +16,22 @@ export const goldenSessionId = 'sess-1'
 
 export const goldenAgentId = 'agent-1'
 
-type SessionPayloadOf<T extends AcpSessionEvent['type']> = Extract<
-  AcpSessionEvent,
+type SessionPayloadOf<T extends AcpjsSessionEvent['type']> = Extract<
+  AcpjsSessionEvent,
   { type: T }
 >['payload']
 
-type HostPayloadOf<T extends AcpHostEvent['type']> = Extract<
-  AcpHostEvent,
+type HostPayloadOf<T extends AcpjsHostEvent['type']> = Extract<
+  AcpjsHostEvent,
   { type: T }
 >['payload']
 
-function session<T extends AcpSessionEvent['type']>(
+function session<T extends AcpjsSessionEvent['type']>(
   seq: number,
   type: T,
   payload: SessionPayloadOf<T>,
-  extensions?: AcpEventExtensions,
-): AcpEvent {
+  extensions?: AcpjsEventExtensions,
+): AcpjsEvent {
   const event = {
     sessionId: goldenSessionId,
     seq,
@@ -39,21 +39,21 @@ function session<T extends AcpSessionEvent['type']>(
     type,
     payload,
   }
-  return (extensions ? { ...event, extensions } : event) as AcpEvent
+  return (extensions ? { ...event, extensions } : event) as AcpjsEvent
 }
 
-function host<T extends AcpHostEvent['type']>(
+function host<T extends AcpjsHostEvent['type']>(
   seq: number,
   type: T,
   payload: HostPayloadOf<T>,
-): AcpEvent {
+): AcpjsEvent {
   return {
     agentId: goldenAgentId,
     seq,
     ts: base + 100 + seq,
     type,
     payload,
-  } as AcpEvent
+  } as AcpjsEvent
 }
 
 export function goldenModelOption(currentValue: string): SessionConfigOption {
@@ -80,7 +80,7 @@ export function goldenModes(currentModeId: string): SessionModeState {
   }
 }
 
-export const goldenCorpus: AcpEvent[] = [
+export const goldenCorpus: AcpjsEvent[] = [
   session(0, 'session-reset', { reason: 'load' }),
   session(1, 'session-config-init', {
     modes: goldenModes('normal'),

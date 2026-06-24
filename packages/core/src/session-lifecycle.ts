@@ -1,9 +1,10 @@
 import {
-  ACP_ERROR_CODES,
+  ACPJS_ERROR_CODES,
   type CreateOrLoadSessionParams,
   type CreateSessionResult,
   type ResumeSessionParams,
 } from '@acpjs/protocol'
+import { methods, type McpServer } from '@agentclientprotocol/sdk'
 
 import { AcpError } from './errors.ts'
 import { capabilityEnabled } from './internal.ts'
@@ -25,10 +26,16 @@ import { sessionSnapshot } from './snapshots.ts'
 
 import type { SessionManager } from './session-manager.ts'
 
+function mcpServersParam(mcpServers: McpServer[] | undefined): {
+  mcpServers?: McpServer[]
+} {
+  return mcpServers === undefined ? {} : { mcpServers }
+}
+
 function requireOpenOrMissing(sessionId: string, status?: string): void {
   if (status === 'closed' || status === 'deleted') {
     throw new AcpError(
-      ACP_ERROR_CODES.sessionClosed,
+      ACPJS_ERROR_CODES.sessionClosed,
       `session ${sessionId} is closed or deleted`,
     )
   }
@@ -41,13 +48,13 @@ function requireLifecycleStart(
   requireOpenOrMissing(sessionId, status)
   if (status === 'prompting') {
     throw new AcpError(
-      ACP_ERROR_CODES.promptInFlight,
+      ACPJS_ERROR_CODES.promptInFlight,
       `session ${sessionId} has a prompt in flight`,
     )
   }
   if (status === 'resuming') {
     throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
+      ACPJS_ERROR_CODES.configInvalid,
       `session ${sessionId} lifecycle operation in progress`,
     )
   }
@@ -63,7 +70,7 @@ export async function createManagedSession(
   const extra = additionalDirectoryParams(handle, params.additionalDirectories)
   const response = await manager.runtime.track(
     handle,
-    conn.newSession({
+    conn.agent.request(methods.agent.session.new, {
       cwd: params.cwd,
       mcpServers: params.mcpServers,
       ...extra,
@@ -104,7 +111,7 @@ export async function loadManagedSession(
     !sameAgentOrUnknown(session, agentId, handle.definition.id)
   ) {
     throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
+      ACPJS_ERROR_CODES.configInvalid,
       `session ${sessionId} belongs to another agent`,
     )
   }
@@ -125,7 +132,7 @@ export async function loadManagedSession(
   try {
     const response = await manager.runtime.track(
       handle,
-      conn.loadSession({
+      conn.agent.request(methods.agent.session.load, {
         sessionId,
         cwd: params.cwd,
         mcpServers: params.mcpServers,
@@ -136,13 +143,13 @@ export async function loadManagedSession(
     if (isNewSession) {
       if (!manager.isCurrentStagingLifecycle(session, 'load', operationId)) {
         throw new AcpError(
-          ACP_ERROR_CODES.sessionClosed,
+          ACPJS_ERROR_CODES.sessionClosed,
           `session ${sessionId} is no longer pending`,
         )
       }
     } else if (!manager.isCurrentLifecycle(session, 'load', operationId)) {
       throw new AcpError(
-        ACP_ERROR_CODES.sessionClosed,
+        ACPJS_ERROR_CODES.sessionClosed,
         `session ${sessionId} is no longer active`,
       )
     }
@@ -153,14 +160,14 @@ export async function loadManagedSession(
     if (isNewSession) {
       if (!manager.isCurrentStagingLifecycle(session, 'load', operationId)) {
         throw new AcpError(
-          ACP_ERROR_CODES.sessionClosed,
+          ACPJS_ERROR_CODES.sessionClosed,
           `session ${sessionId} is no longer pending`,
         )
       }
       manager.commitStagingSession(session)
     } else if (!manager.isCurrentLifecycle(session, 'load', operationId)) {
       throw new AcpError(
-        ACP_ERROR_CODES.sessionClosed,
+        ACPJS_ERROR_CODES.sessionClosed,
         `session ${sessionId} is no longer active`,
       )
     }
@@ -209,7 +216,7 @@ export async function resumeManagedSession(
     !sameAgentOrUnknown(session, agentId, handle.definition.id)
   ) {
     throw new AcpError(
-      ACP_ERROR_CODES.configInvalid,
+      ACPJS_ERROR_CODES.configInvalid,
       `session ${sessionId} belongs to another agent`,
     )
   }
@@ -229,26 +236,24 @@ export async function resumeManagedSession(
   try {
     const response = await manager.runtime.track(
       handle,
-      conn.resumeSession({
+      conn.agent.request(methods.agent.session.resume, {
         sessionId,
         cwd: params.cwd,
-        ...(params.mcpServers === undefined
-          ? {}
-          : { mcpServers: params.mcpServers }),
+        ...mcpServersParam(params.mcpServers),
         ...extra,
       }),
     )
     if (isNewSession) {
       if (!manager.isCurrentStagingLifecycle(session, 'resume', operationId)) {
         throw new AcpError(
-          ACP_ERROR_CODES.sessionClosed,
+          ACPJS_ERROR_CODES.sessionClosed,
           `session ${sessionId} is no longer pending`,
         )
       }
       manager.commitStagingSession(session)
     } else if (!manager.isCurrentLifecycle(session, 'resume', operationId)) {
       throw new AcpError(
-        ACP_ERROR_CODES.sessionClosed,
+        ACPJS_ERROR_CODES.sessionClosed,
         `session ${sessionId} is no longer active`,
       )
     }

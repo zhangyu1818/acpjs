@@ -20,9 +20,9 @@ export type {
 } from './types.ts'
 export { createInitialSessionState, reduce } from '@acpjs/protocol'
 export type {
-  AcpSessionEvent,
-  AgentSnapshotWire,
+  AcpjsSessionEvent,
+  AgentSnapshot,
   DiagnosticEvent,
-  SessionSnapshotWire,
+  SessionSnapshot,
   SessionState,
 } from '@acpjs/protocol'

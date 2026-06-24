@@ -1,5 +1,5 @@
 import {
-  ACP_ERROR_CODES,
+  ACPJS_ERROR_CODES,
   type CreateOrLoadSessionParams,
   type CreateSessionResult,
   type PromptFinishedPayload,
@@ -73,7 +73,7 @@ export class SessionManager {
       session.status === 'deleted'
     ) {
       throw new AcpError(
-        ACP_ERROR_CODES.sessionClosed,
+        ACPJS_ERROR_CODES.sessionClosed,
         `session ${sessionId} is closed or unknown`,
       )
     }
@@ -86,7 +86,7 @@ export class SessionManager {
   ): number {
     if (session.lifecycleOperation !== undefined) {
       throw new AcpError(
-        ACP_ERROR_CODES.configInvalid,
+        ACPJS_ERROR_CODES.configInvalid,
         `session ${session.sessionId} lifecycle operation in progress`,
       )
     }
@@ -141,7 +141,7 @@ export class SessionManager {
   assertNotTombstoned(sessionId: string): void {
     if (!this.tombstones.has(sessionId)) return
     throw new AcpError(
-      ACP_ERROR_CODES.sessionClosed,
+      ACPJS_ERROR_CODES.sessionClosed,
       `session ${sessionId} is closed or deleted`,
     )
   }
@@ -149,7 +149,7 @@ export class SessionManager {
   assertNotDeleted(sessionId: string): void {
     if (this.tombstones.get(sessionId) !== 'deleted') return
     throw new AcpError(
-      ACP_ERROR_CODES.sessionClosed,
+      ACPJS_ERROR_CODES.sessionClosed,
       `session ${sessionId} is deleted`,
     )
   }
@@ -207,7 +207,7 @@ export class SessionManager {
       this.stagingSessions.has(session.sessionId)
     ) {
       throw new AcpError(
-        ACP_ERROR_CODES.configInvalid,
+        ACPJS_ERROR_CODES.configInvalid,
         `session ${session.sessionId} already exists`,
       )
     }
@@ -221,7 +221,7 @@ export class SessionManager {
       this.stagingSessions.has(session.sessionId)
     ) {
       throw new AcpError(
-        ACP_ERROR_CODES.configInvalid,
+        ACPJS_ERROR_CODES.configInvalid,
         `session ${session.sessionId} already exists`,
       )
     }
@@ -232,13 +232,13 @@ export class SessionManager {
     this.assertNotTombstoned(session.sessionId)
     if (this.stagingSessions.get(session.sessionId) !== session) {
       throw new AcpError(
-        ACP_ERROR_CODES.sessionClosed,
+        ACPJS_ERROR_CODES.sessionClosed,
         `session ${session.sessionId} is no longer pending`,
       )
     }
     if (this.sessions.has(session.sessionId)) {
       throw new AcpError(
-        ACP_ERROR_CODES.configInvalid,
+        ACPJS_ERROR_CODES.configInvalid,
         `session ${session.sessionId} already exists`,
       )
     }
@@ -254,7 +254,7 @@ export class SessionManager {
   ): void {
     if (!sameAgentOrUnknown(session, agentId, handle.definition.id)) {
       throw new AcpError(
-        ACP_ERROR_CODES.configInvalid,
+        ACPJS_ERROR_CODES.configInvalid,
         `session ${session.sessionId} belongs to another agent`,
       )
     }

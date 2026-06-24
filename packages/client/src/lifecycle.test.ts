@@ -8,7 +8,7 @@ import {
   ScriptedError,
 } from './test-support.ts'
 
-test('an RPC error response rejects with a typed ErrorObject carrying code and data', async () => {
+test('a host error response rejects with a typed ErrorObject carrying code and data', async () => {
   const hub = createFakeHub()
   hub.handle('agents/spawn', () => {
     throw new ScriptedError({

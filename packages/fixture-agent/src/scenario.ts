@@ -32,6 +32,7 @@ export interface FixtureScenario {
     replay?: SessionUpdate[]
     modes?: SessionModeState
     configOptions?: SessionConfigOption[]
+    expectMcpServers?: McpServer[]
     error?: { code: number; message: string; data?: unknown }
     failures?: number
   }
@@ -46,6 +47,12 @@ export interface FixtureScenario {
     expectMcpServers?: McpServer[]
     error?: { code: number; message: string; data?: unknown }
     failures?: number
+  }
+  closeSession?: {
+    error?: { code: number; message: string; data?: unknown }
+  }
+  deleteSession?: {
+    error?: { code: number; message: string; data?: unknown }
   }
   setConfigOption?: {
     configOptions: SessionConfigOption[]
@@ -68,7 +75,6 @@ export interface FixturePermissionStep {
 
 export type FixtureStep =
   | { kind: 'update'; update: SessionUpdate }
-  | { kind: 'rawUpdate'; update: unknown }
   | FixturePermissionStep
   | { kind: 'readTextFile'; path: string; line?: number; limit?: number }
   | { kind: 'writeTextFile'; path: string; content: string }
@@ -82,5 +88,6 @@ export type FixtureStep =
       actions?: ('output' | 'waitForExit' | 'kill' | 'release')[]
     }
   | { kind: 'sleep'; ms: number }
+  | { kind: 'disconnect' }
   | { kind: 'error'; code: number; message: string; data?: unknown }
   | { kind: 'exit'; code: number }

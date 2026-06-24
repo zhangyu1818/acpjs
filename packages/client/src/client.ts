@@ -1,17 +1,17 @@
 import {
-  ACP_ERROR_CODES,
-  ACPJS_HOST_RPC_METHODS,
-  type AcpEvent,
-  type AgentSnapshotWire,
+  ACPJS_ERROR_CODES,
+  ACPJS_HOST_METHODS,
+  type AcpjsEvent,
+  type AgentSnapshot,
   type ErrorObject,
-  type SessionSnapshotWire,
-  type TransportHandlers,
+  type SessionSnapshot,
+  type HostClientTransportHandlers,
 } from '@acpjs/protocol'
 
 import { createAgentHandle } from './agent-handle.ts'
 import { createDiagnosticsLog } from './client-diagnostics.ts'
+import { createHostCaller } from './client-host-call.ts'
 import { createClientPermissionController } from './client-permissions.ts'
-import { createRpcCaller } from './client-rpc.ts'
 import { AcpClientError, transportClosedError } from './errors.ts'
 import { notifyChange } from './internal.ts'
 import { createPermissionRegistry } from './permission-registry.ts'
@@ -37,7 +37,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
   const agentUpdaters = new Map<
     string,
     {
-      applySnapshot: (snapshot: AgentSnapshotWire) => void
+      applySnapshot: (snapshot: AgentSnapshot) => void
     }
   >()
   let agentsSnapshot: readonly AcpAgent[] = Object.freeze([])
@@ -72,7 +72,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
     if (closedError) throw new AcpClientError(closedError)
   }
 
-  const handlers: TransportHandlers = {
+  const handlers: HostClientTransportHandlers = {
     onInboundRequest() {},
     onLifecycle(event) {
       if (event.status === 'closed') {
@@ -104,7 +104,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
     registry: permissions,
   })
 
-  function onHostEvent(event: AcpEvent): void {
+  function onHostEvent(event: AcpjsEvent): void {
     if (event.type === 'agent-updated') {
       registerAgent(event.payload)
     } else if (event.type === 'agent-removed') {
@@ -125,7 +125,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
     })
     .catch(() => {})
 
-  const call = createRpcCaller({
+  const call = createHostCaller({
     ensureOpen,
     connected: () => connected,
     request: (request) => transport.request(request),
@@ -152,7 +152,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
   }
 
   function applySessionProjection(
-    snapshot: SessionSnapshotWire,
+    snapshot: SessionSnapshot,
   ): AcpSession | undefined {
     if (snapshot.status === 'deleted' || snapshot.status === 'closed') {
       closeSessionHandle(snapshot.sessionId)
@@ -166,21 +166,18 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
     return session
   }
 
-  async function listAgents(): Promise<readonly AgentSnapshotWire[]> {
-    return (await call(
-      ACPJS_HOST_RPC_METHODS.listAgents,
-      {},
-    )) as AgentSnapshotWire[]
+  async function listAgents(): Promise<readonly AgentSnapshot[]> {
+    return (await call(ACPJS_HOST_METHODS.listAgents, {})) as AgentSnapshot[]
   }
 
-  async function listAllSessions(): Promise<readonly SessionSnapshotWire[]> {
+  async function listAllSessions(): Promise<readonly SessionSnapshot[]> {
     return (await call(
-      ACPJS_HOST_RPC_METHODS.getAllSessions,
+      ACPJS_HOST_METHODS.getAllSessions,
       {},
-    )) as SessionSnapshotWire[]
+    )) as SessionSnapshot[]
   }
 
-  function registerAgent(snapshot: AgentSnapshotWire): AcpAgent {
+  function registerAgent(snapshot: AgentSnapshot): AcpAgent {
     const existing = agents.get(snapshot.agentId)
     if (existing) {
       agentUpdaters.get(snapshot.agentId)?.applySnapshot(snapshot)
@@ -193,7 +190,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
         const session = applySessionProjection(snapshot)
         if (session === undefined) {
           throw new AcpClientError({
-            code: ACP_ERROR_CODES.sessionClosed,
+            code: ACPJS_ERROR_CODES.sessionClosed,
             message: `session ${snapshot.sessionId} is deleted`,
             retryable: false,
           })
@@ -218,9 +215,9 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
   return Object.freeze({
     agents: Object.freeze({
       async spawn(definition: AgentDefinition): Promise<AcpAgent> {
-        const snapshot = (await call(ACPJS_HOST_RPC_METHODS.spawnAgent, {
+        const snapshot = (await call(ACPJS_HOST_METHODS.spawnAgent, {
           definition,
-        })) as AgentSnapshotWire
+        })) as AgentSnapshot
         return registerAgent(snapshot)
       },
       get: (agentId: string) => agents.get(agentId),
@@ -237,7 +234,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
         )
         if (!snapshot) {
           throw new AcpClientError({
-            code: ACP_ERROR_CODES.agentExited,
+            code: ACPJS_ERROR_CODES.agentExited,
             message: `agent ${agentId} is not known to the host`,
             retryable: false,
           })
@@ -245,7 +242,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
         return agents.get(agentId) ?? registerAgent(snapshot)
       },
       async dispose(agentId: string): Promise<void> {
-        await call(ACPJS_HOST_RPC_METHODS.disposeAgent, { agentId })
+        await call(ACPJS_HOST_METHODS.disposeAgent, { agentId })
       },
     }),
     sessions: Object.freeze({
@@ -263,7 +260,7 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
         )
         if (!snapshot) {
           throw new AcpClientError({
-            code: ACP_ERROR_CODES.sessionClosed,
+            code: ACPJS_ERROR_CODES.sessionClosed,
             message: `session ${sessionId} is not known to the host`,
             retryable: false,
           })
@@ -271,18 +268,18 @@ export function createAcpClient(options: CreateAcpClientOptions): AcpClient {
         const session = applySessionProjection(snapshot)
         if (session === undefined) {
           throw new AcpClientError({
-            code: ACP_ERROR_CODES.sessionClosed,
+            code: ACPJS_ERROR_CODES.sessionClosed,
             message: `session ${sessionId} is deleted`,
             retryable: false,
           })
         }
         return session
       },
-      async restore(): Promise<readonly SessionSnapshotWire[]> {
+      async restore(): Promise<readonly SessionSnapshot[]> {
         const restored = (await call(
-          ACPJS_HOST_RPC_METHODS.restoreSessions,
+          ACPJS_HOST_METHODS.restoreSessions,
           {},
-        )) as SessionSnapshotWire[]
+        )) as SessionSnapshot[]
         for (const snapshot of restored) applySessionProjection(snapshot)
         return restored
       },

@@ -1,8 +1,8 @@
 import {
-  ACP_ERROR_CODES,
+  ACPJS_ERROR_CODES,
   type HostPermissionSnapshot,
   type RequestPermissionOutcome,
-  type Transport,
+  type HostClientTransport,
 } from '@acpjs/protocol'
 
 import { toClientError } from './errors.ts'
@@ -25,7 +25,7 @@ export interface ClientPermissionController {
 export function createClientPermissionController(options: {
   ensureOpen: () => void
   connected: Promise<void>
-  respondInbound: Transport['respondInbound']
+  respondInbound: HostClientTransport['respondInbound']
   registry?: PermissionRegistry
 }): ClientPermissionController {
   const registry = options.registry ?? createPermissionRegistry()
@@ -40,7 +40,7 @@ export function createClientPermissionController(options: {
       await options.respondInbound({ id: requestId, result: outcome })
     } catch (error) {
       const clientError = toClientError(error)
-      if (clientError.code === ACP_ERROR_CODES.alreadyAnswered) {
+      if (clientError.code === ACPJS_ERROR_CODES.alreadyAnswered) {
         registry.prune(requestId)
       }
       throw clientError

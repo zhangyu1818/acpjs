@@ -33,7 +33,7 @@ pre-load and post-load timelines together and desyncs your history from `reduce(
 
 ```ts
 import type { AcpSession } from '@acpjs/client'
-import type { Plan } from '@agentclientprotocol/sdk'
+import type { Plan } from '@acpjs/protocol'
 
 export function trackPlanHistory(session: AcpSession): {
   history: Plan[]
@@ -64,19 +64,21 @@ snapshot, the array is the ordered sequence of plan states the agent has publish
 
 ## 2. Per-turn grouping
 
-A turn is the span of events that ends with a `prompt-finished` event; its `payload.stopReason` is the
-turn's terminal reason (and `payload.error`, if present, is the agent's structured error — see
-recipe 3). Fold the stream into buckets, closing the open bucket on each `prompt-finished`, and
-reset/close all buckets on `session-reset` (a load starts a new epoch). Do **not** key buckets on raw
-`seq` — it resets on load.
+A completed turn is the span of events that ends with a `prompt-finished`
+event; its `payload.stopReason` is the turn's ACP stop reason. Prompt-time
+agent JSON-RPC errors reject the imperative `prompt()` call instead of
+fabricating a stop reason, so they do not produce `prompt-finished`. Fold the
+stream into buckets, closing the open bucket on each `prompt-finished`, and
+reset/close all buckets on `session-reset` (a load starts a new epoch). Do
+**not** key buckets on raw `seq` — it resets on load.
 
 ```ts
 import type { AcpSession } from '@acpjs/client'
-import type { AcpSessionEvent } from '@acpjs/client'
-import type { StopReason } from '@agentclientprotocol/sdk'
+import type { AcpjsSessionEvent } from '@acpjs/client'
+import type { StopReason } from '@acpjs/protocol'
 
 interface Turn {
-  events: AcpSessionEvent[]
+  events: AcpjsSessionEvent[]
   stopReason: StopReason | null
 }
 
@@ -129,35 +131,21 @@ what `session.getSnapshot()` would have produced for that span.
 ## 3. Discriminate auth (and other agent) errors without regex
 
 acpjs preserves the agent's **structured JSON-RPC error code** — you never have to match on message
-text. ACP signals "authentication required" with code `-32000` (`auth_required`). There are two
-surfaces, depending on how the error arrived, and they wrap differently:
-
-**Prompt errors land in state, unwrapped.** `session.prompt()` does not throw on an agent protocol
-error during the turn; it resolves with the `PromptFinishedPayload`, and the reducer records the raw
-agent error info on `state.lastPromptError` (`{ code, message, data? }`). The code is the agent's own
-`-32000`, not an acpjs wrapper:
-
-```ts
-import type { SessionState } from '@acpjs/client'
-
-const ACP_AUTH_REQUIRED = -32000
-
-export function promptNeedsAuth(state: SessionState): boolean {
-  return state.lastPromptError?.code === ACP_AUTH_REQUIRED
-}
-```
-
-**Imperative calls throw, wrapped.** Errors thrown by `agent.sessions.create` / `load` / `resume`,
-`prompt` setup, etc. surface as an `AcpClientError` whose `code` is the acpjs sentinel
+text. ACP signals "authentication required" with code `-32000` (`auth_required`). Through
+`@acpjs/client`, agent JSON-RPC errors reject as `AcpClientError` with the acpjs sentinel code
 `'acpjs/agent-error'`; the **original** agent error is preserved in `error.data` as
-`{ code, message, data? }`. So you check the inner code, not the outer one:
+`{ code, message, data? }`. Direct `@acpjs/core` callers may receive the original numeric error
+object directly, so check both shapes:
 
 ```ts
 const ACP_AUTH_REQUIRED = -32000
 
 function isAuthRequired(error: unknown): boolean {
-  const data = (error as { data?: { code?: number } }).data
-  return data?.code === ACP_AUTH_REQUIRED
+  const candidate = error as { code?: unknown; data?: { code?: unknown } }
+  return (
+    candidate.code === ACP_AUTH_REQUIRED ||
+    candidate.data?.code === ACP_AUTH_REQUIRED
+  )
 }
 
 try {
@@ -175,7 +163,7 @@ try {
 }
 ```
 
-The same `error.data?.code` check generalizes to any structured agent error code, not just auth.
+The same inner-code check generalizes to any structured agent error code, not just auth.
 
 **Rendering the login picker.** acpjs implements no `authenticate` flow by design — auth is handled
 out of band. What it surfaces is the agent's advertised `authMethods` on the agent snapshot

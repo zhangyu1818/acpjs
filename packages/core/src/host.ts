@@ -1,11 +1,18 @@
 import {
-  ACP_ERROR_CODES,
-  type AgentSnapshotWire,
+  ACPJS_ERROR_CODES,
+  type AgentSnapshot,
   type CreateOrLoadSessionParams,
   type PromptFinishedPayload,
   type ResumeSessionParams,
-  type SessionSnapshotWire,
+  type SessionSnapshot,
 } from '@acpjs/protocol'
+import {
+  methods,
+  type ContentBlock,
+  type ListSessionsResponse,
+  type RequestPermissionOutcome,
+  type SessionConfigOption,
+} from '@agentclientprotocol/sdk'
 
 import { AgentRuntime } from './agent-runtime.ts'
 import { deriveClientCapabilities } from './capabilities.ts'
@@ -33,20 +40,13 @@ import {
 import { recoverSessions, restoreSessions } from './session-recovery.ts'
 import { agentSnapshot, sessionSnapshot } from './snapshots.ts'
 
-import type {
-  ContentBlock,
-  ListSessionsResponse,
-  RequestPermissionOutcome,
-  SessionConfigOption,
-} from '@agentclientprotocol/sdk'
-
 export type {
-  AgentSnapshotWire,
+  AgentSnapshot,
   CreateOrLoadSessionParams,
   CreateSessionResult,
   ResumeSessionParams,
   SessionConfigValue,
-  SessionSnapshotWire,
+  SessionSnapshot,
 }
 export type { EventSubscriber }
 
@@ -83,7 +83,7 @@ export class AcpHost {
         this.#fsHandler,
         this.#terminalHandler,
       ),
-      createClient: (handle) =>
+      createClientApp: (handle) =>
         createAgentClient(
           {
             sessions: this.#sessions,
@@ -115,25 +115,25 @@ export class AcpHost {
     return this.#options
   }
 
-  async spawnAgent(definition: AgentDefinition): Promise<AgentSnapshotWire> {
+  async spawnAgent(definition: AgentDefinition): Promise<AgentSnapshot> {
     if (this.#disposed) {
-      throw new AcpError(ACP_ERROR_CODES.agentExited, 'host disposed')
+      throw new AcpError(ACPJS_ERROR_CODES.agentExited, 'host disposed')
     }
     const handle = this.#runtime.register(resolveAgentDefinition(definition))
     await this.#runtime.start(handle)
     const snapshot = this.getAgent(handle.agentId)
     if (!snapshot) {
-      throw new AcpError(ACP_ERROR_CODES.agentExited, 'agent record missing')
+      throw new AcpError(ACPJS_ERROR_CODES.agentExited, 'agent record missing')
     }
     return snapshot
   }
 
-  getAgent(agentId: string): AgentSnapshotWire | undefined {
+  getAgent(agentId: string): AgentSnapshot | undefined {
     const handle = this.#runtime.agents.get(agentId)
     return handle ? agentSnapshot(handle) : undefined
   }
 
-  getAgents(): AgentSnapshotWire[] {
+  getAgents(): AgentSnapshot[] {
     return Array.from(this.#runtime.agents.values(), agentSnapshot)
   }
 
@@ -148,12 +148,12 @@ export class AcpHost {
     )
   }
 
-  getSession(sessionId: string): SessionSnapshotWire | undefined {
+  getSession(sessionId: string): SessionSnapshot | undefined {
     const session = this.#sessions.sessions.get(sessionId)
     return session ? sessionSnapshot(session) : undefined
   }
 
-  getSessions(): SessionSnapshotWire[] {
+  getSessions(): SessionSnapshot[] {
     return Array.from(this.#sessions.sessions.values(), sessionSnapshot)
   }
 
@@ -188,7 +188,10 @@ export class AcpHost {
       capabilityEnabled(handle.capabilities?.sessionCapabilities?.list),
       'session/list',
     )
-    return this.#runtime.track(handle, conn.listSessions(params))
+    return this.#runtime.track(
+      handle,
+      conn.agent.request(methods.agent.session.list, params),
+    )
   }
 
   async resumeSession(
@@ -234,7 +237,7 @@ export class AcpHost {
     const session = this.#sessions.sessions.get(sessionId)
     if (!session) {
       throw new AcpError(
-        ACP_ERROR_CODES.sessionClosed,
+        ACPJS_ERROR_CODES.sessionClosed,
         `unknown session: ${sessionId}`,
       )
     }
@@ -248,7 +251,7 @@ export class AcpHost {
     this.#router.respond(requestId, outcome)
   }
 
-  async restoreSessions(): Promise<SessionSnapshotWire[]> {
+  async restoreSessions(): Promise<SessionSnapshot[]> {
     const restored = await restoreSessions(
       this.#sessions,
       this.#options.storage,

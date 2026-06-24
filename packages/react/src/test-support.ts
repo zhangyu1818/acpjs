@@ -5,29 +5,30 @@ import {
 } from '@acpjs/client'
 
 import type {
-  AcpHostEvent,
-  AcpSessionEvent,
+  AcpjsHostEvent,
+  AcpjsHostMethod,
+  AcpjsSessionEvent,
   InboundRequest,
   InboundResponse,
-  RpcRequest,
-  Transport,
-  TransportHandlers,
+  HostRequest,
+  HostClientTransport,
+  HostClientTransportHandlers,
 } from '@acpjs/protocol'
 
 type MethodHandler = (params: Record<string, unknown>) => unknown
 
-type HostEventInput<T = AcpHostEvent> = T extends AcpHostEvent
+type HostEventInput<T = AcpjsHostEvent> = T extends AcpjsHostEvent
   ? Omit<T, 'seq' | 'ts'>
   : never
 
 export interface TestHarness {
   client: AcpClient
-  requests: RpcRequest[]
+  requests: HostRequest[]
   inboundResponses: InboundResponse[]
-  handle: (method: string, handler: MethodHandler) => void
+  handle: (method: AcpjsHostMethod, handler: MethodHandler) => void
   emit: (
     sessionId: string,
-    type: AcpSessionEvent['type'],
+    type: AcpjsSessionEvent['type'],
     payload: unknown,
   ) => void
   emitHost: (event: HostEventInput) => void
@@ -49,17 +50,17 @@ export function sessionParams(cwd = '/tmp'): CreateOrLoadSessionParams {
 }
 
 export function createTestHarness(): TestHarness {
-  const logs = new Map<string, AcpSessionEvent[]>()
+  const logs = new Map<string, AcpjsSessionEvent[]>()
   const liveSubscribers = new Map<
     string,
-    Set<(event: AcpSessionEvent) => void>
+    Set<(event: AcpjsSessionEvent) => void>
   >()
-  const hostLog: AcpHostEvent[] = []
-  const hostSubscribers = new Set<(event: AcpHostEvent) => void>()
-  const handlers = new Map<string, MethodHandler>()
-  const requests: RpcRequest[] = []
+  const hostLog: AcpjsHostEvent[] = []
+  const hostSubscribers = new Set<(event: AcpjsHostEvent) => void>()
+  const handlers = new Map<AcpjsHostMethod, MethodHandler>()
+  const requests: HostRequest[] = []
   const inboundResponses: InboundResponse[] = []
-  let transportHandlers: TransportHandlers | undefined
+  let transportHandlers: HostClientTransportHandlers | undefined
 
   handlers.set('agents/spawn', () => ({
     agentId: 'agent-1',
@@ -71,7 +72,7 @@ export function createTestHarness(): TestHarness {
     sessionId: 'sess-1',
   }))
 
-  const transport: Transport = {
+  const transport: HostClientTransport = {
     async connect(connectHandlers) {
       transportHandlers = connectHandlers
       connectHandlers.onLifecycle({ status: 'connecting' })
@@ -104,7 +105,7 @@ export function createTestHarness(): TestHarness {
         for (const event of hostLog) {
           if (event.seq > params.fromSeq) onEvent(event)
         }
-        const deliverHost = (event: AcpHostEvent): void => onEvent(event)
+        const deliverHost = (event: AcpjsHostEvent): void => onEvent(event)
         hostSubscribers.add(deliverHost)
         return () => hostSubscribers.delete(deliverHost)
       }
@@ -113,7 +114,7 @@ export function createTestHarness(): TestHarness {
       }
       const live = liveSubscribers.get(sessionId) ?? new Set()
       liveSubscribers.set(sessionId, live)
-      const deliver = (event: AcpSessionEvent): void => onEvent(event)
+      const deliver = (event: AcpjsSessionEvent): void => onEvent(event)
       live.add(deliver)
       return () => live.delete(deliver)
     },
@@ -137,7 +138,7 @@ export function createTestHarness(): TestHarness {
         ts: 0,
         type,
         payload,
-      } as AcpSessionEvent
+      } as AcpjsSessionEvent
       log.push(event)
       for (const deliver of liveSubscribers.get(sessionId) ?? []) {
         deliver(event)
@@ -148,7 +149,7 @@ export function createTestHarness(): TestHarness {
         ...event,
         seq: hostLog.length + 1,
         ts: 0,
-      } as AcpHostEvent
+      } as AcpjsHostEvent
       hostLog.push(hostEvent)
       for (const deliver of hostSubscribers) deliver(hostEvent)
     },
@@ -167,7 +168,7 @@ export function createTestHarness(): TestHarness {
         payload: { ...payload, status: 'pending' },
         seq: hostLog.length + 1,
         ts: 0,
-      } as AcpHostEvent
+      } as AcpjsHostEvent
       hostLog.push(hostEvent)
       for (const deliver of hostSubscribers) deliver(hostEvent)
     },

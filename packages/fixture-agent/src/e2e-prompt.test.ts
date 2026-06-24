@@ -1,14 +1,8 @@
-import { spawn } from 'node:child_process'
-import { createInterface } from 'node:readline'
-
-import {
-  PROTOCOL_VERSION,
-  type SessionNotification,
-} from '@agentclientprotocol/sdk'
 import { expect, test } from 'vitest'
 
-import { chunk, cwd, startSession, trackChild } from './e2e-harness.ts'
-import { fixtureAgentCliPath, writeScenarioFile } from './index.ts'
+import { chunk, startSession } from './e2e-harness.ts'
+
+import type { SessionNotification } from '@agentclientprotocol/sdk'
 
 test('prompt replays all 13 session/update variants in order and returns scripted stopReason with usage', async () => {
   const text = { type: 'text' as const, text: 'hi' }
@@ -96,65 +90,6 @@ test('prompt replays all 13 session/update variants in order and returns scripte
     Array.from({ length: 13 }, () => sessionId),
   )
   expect(updates.map((notification) => notification.update)).toEqual(allUpdates)
-})
-
-test('rawUpdate step injects an unknown sessionUpdate discriminant verbatim onto the wire', async () => {
-  const scenarioPath = await writeScenarioFile({
-    turns: [
-      {
-        steps: [
-          {
-            kind: 'rawUpdate',
-            update: { sessionUpdate: 'vendor_custom', payload: { deep: [1] } },
-          },
-        ],
-      },
-    ],
-  })
-  const child = trackChild(
-    spawn(process.execPath, [fixtureAgentCliPath, '--scenario', scenarioPath], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }),
-  )
-  const lines: unknown[] = []
-  const reader = createInterface({ input: child.stdout })
-  interface RpcResponse {
-    result?: { sessionId?: string }
-  }
-  const responses = new Map<number, (message: RpcResponse) => void>()
-  reader.on('line', (line) => {
-    const message = JSON.parse(line) as { id?: number } & RpcResponse
-    lines.push(message)
-    if (message.id !== undefined) {
-      responses.get(message.id)?.(message)
-    }
-  })
-  const request = (id: number, method: string, params: unknown) => {
-    const settled = new Promise<RpcResponse>((resolve) => {
-      responses.set(id, resolve)
-    })
-    child.stdin.write(
-      `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`,
-    )
-    return settled
-  }
-
-  await request(0, 'initialize', { protocolVersion: PROTOCOL_VERSION })
-  const { result } = await request(1, 'session/new', { cwd, mcpServers: [] })
-  const sessionId = result?.sessionId
-  await request(2, 'session/prompt', {
-    sessionId,
-    prompt: [{ type: 'text', text: 'go' }],
-  })
-
-  expect(lines).toContainEqual({
-    jsonrpc: '2.0',
-    method: 'session/update',
-    params: {
-      sessionId,
-      update: { sessionUpdate: 'vendor_custom', payload: { deep: [1] } },
-    },
-  })
 })
 
 test('consecutive prompts consume scripted turns in order then fall back to end_turn', async () => {

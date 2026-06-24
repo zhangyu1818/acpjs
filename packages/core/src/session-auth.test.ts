@@ -9,7 +9,7 @@ import {
   trackHost,
 } from './test-harness.ts'
 
-import type { AcpSessionEvent } from '@acpjs/protocol'
+import type { AcpjsSessionEvent } from '@acpjs/protocol'
 
 test('agent auth error from session/new is propagated without registering a session', async () => {
   const host = trackHost(createAcpHost())
@@ -34,7 +34,7 @@ test('agent auth error from session/new is propagated without registering a sess
   )
 })
 
-test('agent auth error during prompt is recorded as a prompt error and returns active', async () => {
+test('agent auth error during prompt rejects and returns active', async () => {
   const host = trackHost(createAcpHost())
   const { definition } = await fixtureDefinition({
     initialize: { authMethods: [{ id: 'device', name: 'Device flow' }] },
@@ -44,13 +44,13 @@ test('agent auth error during prompt is recorded as a prompt error and returns a
   })
   const agent = await host.spawnAgent(definition)
   const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
-  const events = collectEvents(host, created.sessionId) as AcpSessionEvent[]
+  const events = collectEvents(host, created.sessionId) as AcpjsSessionEvent[]
 
-  const result = await host.prompt(created.sessionId, [
-    { type: 'text', text: 'go' },
-  ])
+  const error = await rejectionOf(
+    host.prompt(created.sessionId, [{ type: 'text', text: 'go' }]),
+  )
 
-  expect(result.error).toMatchObject({
+  expect(error).toMatchObject({
     code: -32000,
     message: 'auth required',
   })
@@ -60,4 +60,7 @@ test('agent auth error during prompt is recorded as a prompt error and returns a
       .filter((event) => event.type === 'session-status-change')
       .map((event) => event.payload.status),
   ).toEqual(['active', 'prompting', 'active'])
+  await expect(
+    host.prompt(created.sessionId, [{ type: 'text', text: 'retry' }]),
+  ).resolves.toEqual({ stopReason: 'end_turn' })
 })

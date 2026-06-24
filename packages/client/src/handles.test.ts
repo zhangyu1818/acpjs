@@ -62,7 +62,7 @@ test('agents.subscribe notifies when an agent handle appears and stops after uns
   expect(notified).toBe(1)
 })
 
-test('agent.getSnapshot exposes the wire snapshot returned by spawn', async () => {
+test('agent.getSnapshot exposes the host snapshot returned by spawn', async () => {
   const { client } = setup()
 
   const agent = await client.agents.spawn({ id: 'a', command: 'node' })
@@ -279,7 +279,7 @@ test('sessions.getSnapshot enumerates local handles and swaps the array referenc
   expect(client.sessions.getSnapshot()).toBe(afterCreate)
 })
 
-test('sessions.attach rebuilds an existing host session by replay without issuing a resume RPC', async () => {
+test('sessions.attach rebuilds an existing host session by replay without issuing resume', async () => {
   const { hub, client } = setup()
   hub.handle('sessions/getAll', () => [
     { sessionId: 'sess-remote', status: 'active', agentId: 'agent-9' },

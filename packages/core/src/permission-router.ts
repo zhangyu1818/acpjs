@@ -1,4 +1,4 @@
-import { ACP_ERROR_CODES } from '@acpjs/protocol'
+import { ACPJS_ERROR_CODES } from '@acpjs/protocol'
 
 import { AcpError } from './errors.ts'
 
@@ -74,7 +74,7 @@ export class PermissionRouter {
     const pending = this.#pending.get(requestId)
     if (!pending) {
       throw new AcpError(
-        ACP_ERROR_CODES.alreadyAnswered,
+        ACPJS_ERROR_CODES.alreadyAnswered,
         `permission request ${requestId} already answered`,
       )
     }

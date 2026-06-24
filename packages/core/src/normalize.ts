@@ -1,14 +1,14 @@
-import type { AcpEventExtensions, AcpSessionEvent } from '@acpjs/protocol'
+import type { AcpjsEventExtensions, AcpjsSessionEvent } from '@acpjs/protocol'
 import type { SessionUpdate } from '@agentclientprotocol/sdk'
 
 export interface NormalizedUpdate {
-  type: AcpSessionEvent['type']
+  type: AcpjsSessionEvent['type']
   payload: Record<string, unknown>
-  extensions?: AcpEventExtensions
+  extensions?: AcpjsEventExtensions
 }
 
 interface VariantSpec {
-  type: AcpSessionEvent['type']
+  type: AcpjsSessionEvent['type']
   keys: readonly string[]
   keepNullKeys?: readonly string[]
 }
@@ -84,7 +84,7 @@ export function normalizeSessionUpdate(
     return { type: 'unrecognized-update', payload: { ...record } }
   }
   const payload: Record<string, unknown> = {}
-  const extensions: AcpEventExtensions = {}
+  const extensions: AcpjsEventExtensions = {}
   let hasExtensions = false
   for (const [key, value] of Object.entries(record)) {
     if (key === 'sessionUpdate' || value === undefined) continue

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { type AcpEvent, createInitialSessionState, reduce } from './index'
+import { type AcpjsEvent, createInitialSessionState, reduce } from './index'
 import { run, text } from './test-support'
 
 test('a tool call event indexes a normalized tool call by toolCallId', () => {
@@ -36,7 +36,7 @@ test('a tool call event indexes a normalized tool call by toolCallId', () => {
 })
 
 test('a tool call update merges only carried fields and replaces content and locations wholesale', () => {
-  const created: AcpEvent = {
+  const created: AcpjsEvent = {
     sessionId: 'sess-1',
     seq: 1,
     ts: 0,

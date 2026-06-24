@@ -1,103 +1,88 @@
-import { expect, test, vi } from 'vitest'
+import {
+  client as createClientApp,
+  methods,
+  type McpServer,
+  type SessionNotification,
+} from '@agentclientprotocol/sdk'
+import { expect, test } from 'vitest'
 
 import { createFixtureAgent, type FixtureIo } from './agent.ts'
 
-import type { AgentSideConnection } from '@agentclientprotocol/sdk'
-
-test('rawUpdate writes the session/update envelope through raw io, bypassing the SDK connection entirely', async () => {
-  const sessionUpdate = vi.fn(async () => {})
-  const conn = { sessionUpdate } as unknown as AgentSideConnection
-  const writeRaw = vi.fn()
-  const io: FixtureIo = {
-    writeRaw,
+function fixtureIo(): FixtureIo {
+  return {
+    disconnect() {},
     exit(code) {
       throw new Error(`exit ${String(code)}`)
     },
   }
-  const update = { sessionUpdate: 'vendor_custom', payload: { deep: [1] } }
-  const agent = createFixtureAgent(
-    { turns: [{ steps: [{ kind: 'rawUpdate', update }] }] },
-    conn,
-    io,
-  )
+}
 
-  const result = await agent.prompt({
-    sessionId: 'sess-raw',
-    prompt: [{ type: 'text', text: 'go' }],
-  })
-
-  expect(result).toEqual({ stopReason: 'end_turn' })
-  expect(writeRaw).toHaveBeenCalledTimes(1)
-  expect(writeRaw).toHaveBeenCalledWith({
-    jsonrpc: '2.0',
-    method: 'session/update',
-    params: { sessionId: 'sess-raw', update },
-  })
-  expect(sessionUpdate).not.toHaveBeenCalled()
-})
+function connectFixtureAgent(
+  scenario: Parameters<typeof createFixtureAgent>[0],
+  io = fixtureIo(),
+) {
+  const updates: SessionNotification[] = []
+  const clientApp = createClientApp({ name: '@acpjs/fixture-agent-unit' })
+    .onNotification(methods.client.session.update, ({ params }) => {
+      updates.push(params)
+    })
+    .onRequest(methods.client.session.requestPermission, () => ({
+      outcome: { outcome: 'cancelled' },
+    }))
+  const connection = clientApp.connect(createFixtureAgent(scenario, io))
+  return { connection, updates }
+}
 
 test('loadSession error script fails the first N calls then replays normally', async () => {
-  const sessionUpdate = vi.fn(async () => {})
-  const conn = { sessionUpdate } as unknown as AgentSideConnection
-  const io: FixtureIo = {
-    writeRaw: vi.fn(),
-    exit(code) {
-      throw new Error(`exit ${String(code)}`)
-    },
+  const replayUpdate: SessionNotification['update'] = {
+    sessionUpdate: 'agent_message_chunk',
+    content: { type: 'text', text: 'replayed' },
   }
-  const agent = createFixtureAgent(
-    {
-      initialize: { agentCapabilities: { loadSession: true } },
-      loadSession: {
-        error: { code: -32603, message: 'load boom' },
-        failures: 1,
-        replay: [
-          {
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: 'replayed' },
-          },
-        ],
-      },
+  const { connection, updates } = connectFixtureAgent({
+    initialize: { agentCapabilities: { loadSession: true } },
+    loadSession: {
+      error: { code: -32603, message: 'load boom' },
+      failures: 1,
+      replay: [replayUpdate],
     },
-    conn,
-    io,
-  )
-
+  })
   const params = { sessionId: 'sess-load', cwd: '/tmp', mcpServers: [] }
-  await expect(agent.loadSession?.(params)).rejects.toMatchObject({
+
+  await expect(
+    connection.agent.request(methods.agent.session.load, params),
+  ).rejects.toMatchObject({
     code: -32603,
     message: expect.stringContaining('load boom'),
   })
-  await expect(agent.loadSession?.(params)).resolves.toEqual({})
-  expect(sessionUpdate).toHaveBeenCalledTimes(1)
+  await expect(
+    connection.agent.request(methods.agent.session.load, params),
+  ).resolves.toEqual({})
+  expect(updates).toEqual([{ sessionId: 'sess-load', update: replayUpdate }])
 })
 
 test('resumeSession with expectMcpServers rejects calls whose mcpServers differ', async () => {
-  const conn = {
-    sessionUpdate: vi.fn(async () => {}),
-  } as unknown as AgentSideConnection
-  const io: FixtureIo = {
-    writeRaw: vi.fn(),
-    exit(code) {
-      throw new Error(`exit ${String(code)}`)
+  const mcpServers: McpServer[] = [
+    { name: 'svc', command: '/bin/echo', args: [], env: [] },
+  ]
+  const { connection } = connectFixtureAgent({
+    initialize: {
+      agentCapabilities: { sessionCapabilities: { resume: {} } },
     },
-  }
-  const mcpServers = [{ name: 'svc', command: '/bin/echo', args: [] }]
-  const agent = createFixtureAgent(
-    {
-      initialize: {
-        agentCapabilities: { sessionCapabilities: { resume: {} } },
-      },
-      resumeSession: { expectMcpServers: mcpServers },
-    },
-    conn,
-    io,
-  )
+    resumeSession: { expectMcpServers: mcpServers },
+  })
 
   await expect(
-    agent.resumeSession?.({ sessionId: 's', cwd: '/tmp', mcpServers }),
+    connection.agent.request(methods.agent.session.resume, {
+      sessionId: 's',
+      cwd: '/tmp',
+      mcpServers,
+    }),
   ).resolves.toEqual({})
   await expect(
-    agent.resumeSession?.({ sessionId: 's', cwd: '/tmp', mcpServers: [] }),
+    connection.agent.request(methods.agent.session.resume, {
+      sessionId: 's',
+      cwd: '/tmp',
+      mcpServers: [],
+    }),
   ).rejects.toMatchObject({ code: -32602 })
 })
