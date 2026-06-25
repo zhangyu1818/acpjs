@@ -1,9 +1,9 @@
 ---
-'@acpjs/protocol': major
-'@acpjs/core': major
-'@acpjs/client': major
-'@acpjs/electron': major
-'@acpjs/react': major
+'@acpjs/protocol': minor
+'@acpjs/core': minor
+'@acpjs/client': minor
+'@acpjs/electron': minor
+'@acpjs/react': minor
 ---
 
 Align the public API with the acpjs host adapter boundary instead of presenting it as ACP wire protocol.
