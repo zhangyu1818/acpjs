@@ -115,6 +115,18 @@ test('capability-gated methods pass through when declared', async () => {
   expect(host.getSession(sessionId)).toBeUndefined()
 })
 
+test('the auth capability surfaces in the agent snapshot when advertised', async () => {
+  const host = trackHost(createAcpHost())
+  const { definition } = await fixtureDefinition({
+    initialize: { agentCapabilities: { auth: { logout: {} } } },
+  })
+  const agent = await host.spawnAgent(definition)
+
+  expect(host.getAgent(agent.agentId)?.capabilities?.auth).toEqual({
+    logout: {},
+  })
+})
+
 test('closeSession closes locally when the agent declares the close capability', async () => {
   const host = trackHost(createAcpHost())
   const { definition } = await fixtureDefinition({

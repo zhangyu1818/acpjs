@@ -22,7 +22,12 @@ export { createInitialSessionState, reduce } from '@acpjs/protocol'
 export type {
   AcpjsSessionEvent,
   AgentSnapshot,
+  ContentBlock,
   DiagnosticEvent,
+  ListSessionsResponse,
+  PromptFinishedPayload,
+  RequestPermissionOutcome,
+  SessionConfigOption,
   SessionSnapshot,
   SessionState,
 } from '@acpjs/protocol'

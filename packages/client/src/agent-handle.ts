@@ -46,6 +46,12 @@ export function createAgentHandle(
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    async authenticate(methodId: string): Promise<void> {
+      await call(ACPJS_HOST_METHODS.authenticate, { agentId, methodId })
+    },
+    async logout(): Promise<void> {
+      await call(ACPJS_HOST_METHODS.logout, { agentId })
+    },
     sessions: Object.freeze({
       async create(params: CreateOrLoadSessionParams): Promise<AcpSession> {
         const result = (await call(ACPJS_HOST_METHODS.createSession, {

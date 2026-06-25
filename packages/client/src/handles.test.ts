@@ -47,6 +47,28 @@ test('sessions.create applies the returned session snapshot immediately', async 
   expect(client.sessions.getSnapshot()).toEqual([session])
 })
 
+test('agent.authenticate and agent.logout round-trip through the transport to the host methods', async () => {
+  const { hub, client } = setup()
+  hub.handle('agents/authenticate', () => null)
+  hub.handle('agents/logout', () => null)
+  const agent = await client.agents.spawn({ id: 'a', command: 'node' })
+
+  await agent.authenticate('device')
+  await agent.logout()
+
+  const authenticate = hub.requests.find(
+    (request) => request.method === 'agents/authenticate',
+  )
+  expect(authenticate?.params).toEqual({
+    agentId: 'agent-1',
+    methodId: 'device',
+  })
+  const logout = hub.requests.find(
+    (request) => request.method === 'agents/logout',
+  )
+  expect(logout?.params).toEqual({ agentId: 'agent-1' })
+})
+
 test('agents.subscribe notifies when an agent handle appears and stops after unsubscribe', async () => {
   const { client } = setup()
   let notified = 0

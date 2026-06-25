@@ -194,6 +194,23 @@ export class AcpHost {
     )
   }
 
+  async authenticate(agentId: string, methodId: string): Promise<void> {
+    const { handle, conn } = this.#runtime.requireReady(agentId)
+    await this.#runtime.track(
+      handle,
+      conn.agent.request(methods.agent.authenticate, { methodId }),
+    )
+  }
+
+  async logout(agentId: string): Promise<void> {
+    const { handle, conn } = this.#runtime.requireReady(agentId)
+    requireCapability(handle.capabilities?.auth?.logout != null, 'logout')
+    await this.#runtime.track(
+      handle,
+      conn.agent.request(methods.agent.logout, {}),
+    )
+  }
+
   async resumeSession(
     agentId: string,
     sessionId: string,

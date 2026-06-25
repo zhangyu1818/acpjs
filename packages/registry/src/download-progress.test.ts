@@ -1,9 +1,10 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { expect, test } from 'vitest'
 
 import { createRegistryClient, DEFAULT_INDEX_URL } from './index.ts'
+import { installBinary } from './installer.ts'
 import {
   binaryResponse,
   chunkedResponse,
@@ -13,6 +14,8 @@ import {
 } from './test-support.ts'
 
 import type { AcpjsHostEvent, InstallProgressPayload } from '@acpjs/protocol'
+
+import type { BinaryTarget, RegistryEntry } from './types.ts'
 
 const noHit = () => Promise.resolve(undefined)
 
@@ -188,4 +191,37 @@ test('ensureInstalled skips empty chunks, keeping downloadedBytes strictly monot
     expect(bytes[i]!).toBeGreaterThan(bytes[i - 1]!)
   }
   expect(bytes.at(-1)).toBe(Buffer.concat(parts).length)
+})
+
+test('installBinary aborts and leaves no cache when the download exceeds the byte cap', async () => {
+  const cacheDir = await makeTmpDir()
+  const entry: RegistryEntry = {
+    id: 'grok-build',
+    name: 'Grok Build',
+    version: '2.0.0',
+    description: 'raw exe agent',
+    distribution: {},
+  }
+  const target: BinaryTarget = {
+    archive: 'https://example.com/grok-build-win-arm64.exe',
+    cmd: './grok-build.exe',
+  }
+  await expect(
+    installBinary(
+      {
+        cacheDir,
+        fetchImpl: () =>
+          Promise.resolve(chunkedResponse(Buffer.alloc(256), 32)),
+        now: () => 0,
+        emitProgress() {},
+        maxDownloadBytes: 64,
+      },
+      'grok-build',
+      entry,
+      'windows-aarch64',
+      target,
+    ),
+  ).rejects.toMatchObject({ code: 'registry/download-failed' })
+
+  await expect(stat(join(cacheDir, 'agents', 'grok-build'))).rejects.toThrow()
 })

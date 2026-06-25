@@ -264,9 +264,7 @@ export function electronTransport(
       if (status === 'connected') {
         try {
           send({ t: 'close' })
-        } catch {
-          port = undefined
-        }
+        } catch {}
       }
       teardown()
     },

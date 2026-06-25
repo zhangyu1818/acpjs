@@ -165,11 +165,14 @@ try {
 
 The same inner-code check generalizes to any structured agent error code, not just auth.
 
-**Rendering the login picker.** acpjs implements no `authenticate` flow by design — auth is handled
-out of band. What it surfaces is the agent's advertised `authMethods` on the agent snapshot
-(`agent.getSnapshot().authMethods`, also pushed via `agent.subscribe`). Each `AuthMethod` carries an
-`id`, a human-readable `name`, and an optional `description`; render those as the choices in your
-out-of-band login UI, run the login the agent expects, then retry the call.
+**Rendering the login picker.** acpjs surfaces `authenticate`/`logout` as mechanism but picks no
+method and tracks no login state — the choice and timing are yours. The data you drive that choice
+from is the agent's advertised `authMethods` on the agent snapshot (`agent.getSnapshot().authMethods`,
+also pushed via `agent.subscribe`). Each `AuthMethod` carries an `id`, a human-readable `name`, and an
+optional `description`; render those as the choices, then call `agent.authenticate(methodId)` with the
+selected id and retry the call. Some agents log in entirely on their own side (e.g. a browser flow) and
+expect no `authenticate` round-trip — for those, just retry after the user completes it. If
+`agent.getSnapshot().capabilities?.auth?.logout` is present the agent supports `agent.logout()`.
 
 ## 4. Join a pending permission to its tool call
 

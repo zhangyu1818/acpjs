@@ -82,11 +82,14 @@ export function wireEndpointToPort(
   const subscriptions = new Map<string, () => void>()
   let closed = false
 
-  function post(message: MainToRendererMessage): void {
-    if (closed) return
+  function post(message: MainToRendererMessage): boolean {
+    if (closed) return false
     try {
       port.postMessage(message)
-    } catch {}
+      return true
+    } catch {
+      return false
+    }
   }
 
   const detachInbound = endpoint.onInboundRequest((request) => {
@@ -109,14 +112,17 @@ export function wireEndpointToPort(
     switch (message.t) {
       case 'request': {
         const id = message.request.id
-        void endpoint.request(message.request).then(
-          (response) => post({ t: 'response', response }),
-          (error: unknown) =>
-            post({
-              t: 'response',
-              response: { id, ok: false, error: toWireError(error) },
-            }),
-        )
+        const postError = (error: unknown): void => {
+          post({
+            t: 'response',
+            response: { id, ok: false, error: toWireError(error) },
+          })
+        }
+        void endpoint.request(message.request).then((response) => {
+          if (!post({ t: 'response', response })) {
+            postError(new Error('response is not transferable'))
+          }
+        }, postError)
         break
       }
       case 'subscribe': {
@@ -141,13 +147,16 @@ export function wireEndpointToPort(
       }
       case 'inbound-response': {
         const ackId = message.ackId
+        const postError = (error: unknown): void => {
+          post({ t: 'inbound-ack', ackId, error: toWireError(error) })
+        }
         void Promise.resolve()
           .then(() => endpoint.respondInbound(message.response))
-          .then(
-            () => post({ t: 'inbound-ack', ackId }),
-            (error: unknown) =>
-              post({ t: 'inbound-ack', ackId, error: toWireError(error) }),
-          )
+          .then(() => {
+            if (!post({ t: 'inbound-ack', ackId })) {
+              postError(new Error('ack is not transferable'))
+            }
+          }, postError)
         break
       }
       case 'close': {

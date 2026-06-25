@@ -46,11 +46,21 @@ export async function disposeAgentProcess(
       agentId: handle.agentId,
     })
     proc.kill('SIGKILL')
-    await Promise.race([
-      exited,
-      new Promise<void>((resolvePromise) =>
-        setTimeout(resolvePromise, deps.options.killTimeoutMs),
+    const reaped = await Promise.race([
+      exited.then(() => true),
+      new Promise<boolean>((resolvePromise) =>
+        setTimeout(() => resolvePromise(false), deps.options.killTimeoutMs),
       ),
     ])
+    if (!reaped && handle.status !== 'exited') {
+      deps.bus.diagnostic('warn', 'agent/kill', {
+        message: 'agent process did not exit after SIGKILL',
+        agentId: handle.agentId,
+      })
+      for (const reject of handle.pendingRejects) reject()
+      handle.pendingRejects.clear()
+      deps.onAgentDown(handle)
+      deps.bus.setAgentStatus(handle, 'exited', 'disposed')
+    }
   }
 }

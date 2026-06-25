@@ -237,12 +237,13 @@ state projection subset:
 - `session-status-change`: the `resumed` flag is sticky until the next
   `disconnected`/`closed`/`deleted`, which resets it.
 - `AgentCapabilitiesSnapshot` is an explicit stable ACP capability projection used
-  by acpjs. It intentionally does not mirror SDK experimental/auth/provider
-  fields that are outside the acpjs product contract. The agent's advertised
-  auth methods are surfaced separately on the snapshot as
+  by acpjs. It mirrors the stable `auth` capability (`AgentAuthCapabilities`,
+  whose `logout` gates `host.logout`) but intentionally omits SDK
+  experimental/provider fields that are outside the acpjs product contract. The
+  agent's advertised auth methods are surfaced separately on the snapshot as
   `AgentSnapshot.authMethods` (`AuthMethod[]`, the `initialize` response's
-  methods verbatim) — acpjs implements no authenticate flow, so this is the data
-  integrators read to drive out-of-band login.
+  methods verbatim) — this is the data integrators read to choose a `methodId`
+  for the `authenticate` mechanism.
 - `current-mode-update` arriving before any mode state synthesizes
   `{ currentModeId, availableModes: [] }`.
 - `diagnostic` agent attribution is expressed solely by the envelope `agentId`

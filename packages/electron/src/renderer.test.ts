@@ -144,6 +144,26 @@ test('request with non-cloneable params rejects instead of hanging', async () =>
   await rig.transport.close()
 })
 
+test('a non-cloneable response settles the renderer request instead of hanging', async () => {
+  const rig = await connectedRig()
+  rig.fake.endpoint.request = async (request) => ({
+    id: request.id,
+    ok: true,
+    result: { fn() {} },
+  })
+  const response = await rig.transport.request({
+    id: 'host-1',
+    method: 'sessions/prompt',
+    params: {},
+  })
+  expect(response).toMatchObject({
+    id: 'host-1',
+    ok: false,
+    error: { code: 'acpjs/agent-error' },
+  })
+  await rig.transport.close()
+})
+
 test('subscribe forwards fromSeq and delivers events in order', async () => {
   const rig = await connectedRig()
   const received: number[] = []

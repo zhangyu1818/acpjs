@@ -1,15 +1,22 @@
-import { execFile } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
-import { promisify } from 'node:util'
 import { inflateRawSync } from 'node:zlib'
 
-const execFileAsync = promisify(execFile)
+import { extract } from 'tar'
 
-export type ArchiveFormat = 'tar' | 'zip' | 'raw' | 'installer'
+export type ArchiveFormat = 'tar' | 'zip' | 'raw' | 'unsupported'
 
-const TAR_SUFFIXES = ['.tar.gz', '.tgz', '.tar.bz2', '.tbz2']
-const INSTALLER_SUFFIXES = ['.dmg', '.pkg', '.deb', '.rpm']
+const ZIP_MAX_ENTRY_BYTES = 256 * 1024 * 1024
+
+const TAR_SUFFIXES = ['.tar.gz', '.tgz']
+const UNSUPPORTED_SUFFIXES = [
+  '.tar.bz2',
+  '.tbz2',
+  '.dmg',
+  '.pkg',
+  '.deb',
+  '.rpm',
+]
 
 export function archiveFormatFor(archiveUrl: string): ArchiveFormat {
   let pathname = archiveUrl
@@ -21,8 +28,8 @@ export function archiveFormatFor(archiveUrl: string): ArchiveFormat {
   const lower = pathname.toLowerCase()
   if (TAR_SUFFIXES.some((suffix) => lower.endsWith(suffix))) return 'tar'
   if (lower.endsWith('.zip')) return 'zip'
-  if (INSTALLER_SUFFIXES.some((suffix) => lower.endsWith(suffix))) {
-    return 'installer'
+  if (UNSUPPORTED_SUFFIXES.some((suffix) => lower.endsWith(suffix))) {
+    return 'unsupported'
   }
   return 'raw'
 }
@@ -40,7 +47,7 @@ export async function extractTar(
   destDir: string,
 ): Promise<void> {
   await mkdir(destDir, { recursive: true })
-  await execFileAsync('tar', ['-xf', archivePath, '-C', destDir])
+  await extract({ file: archivePath, cwd: destDir })
 }
 
 interface ZipEntry {
@@ -48,7 +55,7 @@ interface ZipEntry {
   data: Buffer
 }
 
-function readZipEntries(buffer: Buffer): ZipEntry[] {
+function readZipEntries(buffer: Buffer, maxEntryBytes: number): ZipEntry[] {
   let eocd = -1
   for (let i = buffer.length - 22; i >= 0; i -= 1) {
     if (buffer.readUInt32LE(i) === 0x06054b50) {
@@ -82,7 +89,10 @@ function readZipEntries(buffer: Buffer): ZipEntry[] {
     }
     entries.push({
       name,
-      data: method === 8 ? inflateRawSync(raw) : Buffer.from(raw),
+      data:
+        method === 8
+          ? inflateRawSync(raw, { maxOutputLength: maxEntryBytes })
+          : Buffer.from(raw),
     })
     offset += 46 + nameLength + extraLength + commentLength
   }
@@ -92,9 +102,10 @@ function readZipEntries(buffer: Buffer): ZipEntry[] {
 export async function extractZip(
   buffer: Buffer,
   destDir: string,
+  maxEntryBytes: number = ZIP_MAX_ENTRY_BYTES,
 ): Promise<void> {
   await mkdir(destDir, { recursive: true })
-  for (const entry of readZipEntries(buffer)) {
+  for (const entry of readZipEntries(buffer, maxEntryBytes)) {
     const target = containedPath(destDir, entry.name)
     if (entry.name.endsWith('/')) {
       await mkdir(target, { recursive: true })

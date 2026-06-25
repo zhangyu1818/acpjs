@@ -49,18 +49,24 @@ export function applyBufferedSessionEvent(
   }
 }
 
+function isLiveSession(
+  session: SessionHandle | undefined,
+): session is SessionHandle {
+  return (
+    session !== undefined &&
+    session.status !== 'closed' &&
+    session.status !== 'deleted' &&
+    session.status !== 'disconnected'
+  )
+}
+
 function requireReverseSession(
   context: HostClientContext,
   agentId: string,
   sessionId: string,
 ) {
   const session = context.sessions.sessions.get(sessionId)
-  if (
-    !session ||
-    session.status === 'closed' ||
-    session.status === 'deleted' ||
-    session.status === 'disconnected'
-  ) {
+  if (!isLiveSession(session)) {
     throw RequestError.invalidParams({ sessionId }, 'unknown or closed session')
   }
   if (session.agentId !== undefined && session.agentId !== agentId) {
@@ -229,13 +235,19 @@ export function createAgentClient(
       terminalId: string,
     ): void => {
       const owner = terminalOwners.get(terminalId)
-      if (owner === undefined) {
+      if (
+        owner !== undefined &&
+        !isLiveSession(context.sessions.sessions.get(owner))
+      ) {
+        terminalOwners.delete(terminalId)
+      }
+      if (!terminalOwners.has(terminalId)) {
         throw RequestError.invalidParams(
           { sessionId, terminalId },
           'unknown terminal',
         )
       }
-      if (owner !== sessionId) {
+      if (terminalOwners.get(terminalId) !== sessionId) {
         throw RequestError.invalidParams(
           { sessionId, terminalId },
           'terminal belongs to another session',

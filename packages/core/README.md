@@ -66,6 +66,11 @@ exported directly.
 
 - Agents: `spawnAgent(definition)`, `getAgent(agentId)`, `getAgents()`,
   `disposeAgent(agentId)`
+- Auth: `authenticate(agentId, methodId)` sends the ACP `authenticate` RPC with
+  the integrator-chosen `methodId`; `logout(agentId)` sends `logout` and is gated
+  on the agent's advertised `auth.logout` capability (rejects with
+  `acpjs/capability-unsupported` otherwise). acpjs sends the RPC only — it does
+  not pick the method, store credentials, or track login state.
 - Sessions: `createSession(agentId, { cwd, mcpServers, additionalDirectories })`,
   `prompt(sessionId, ContentBlock[])`, `cancel(sessionId)`,
   `closeSession(sessionId)`, `listSessions(agentId, { cursor?, cwd? })`,
@@ -119,7 +124,7 @@ closed `ACPJS_ERROR_CODES` namespace in `@acpjs/protocol` (`acpjs/config-invalid
 Envelope adapter: `createHostEndpoint(host)` returns an `EnvelopeEndpoint`
 (acpjs HostClientTransport contract shape). Host method ids come from
 `ACPJS_HOST_METHODS` in
-`@acpjs/protocol` (`agents/spawn|list|dispose`,
+`@acpjs/protocol` (`agents/spawn|list|dispose|authenticate|logout`,
 `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`)
 and map to the same-named host methods; they are not ACP agent method names.
 Missing required parameters are
@@ -155,8 +160,10 @@ it.
 
 `authMethods` is the agent's advertised auth methods captured from the
 `initialize` response (`AuthMethod[]`, re-exported from `@acpjs/protocol`),
-surfaced verbatim and omitted until the handshake completes. acpjs still runs no
-authenticate flow; this is the data integrators read to drive out-of-band login.
+surfaced verbatim and omitted until the handshake completes. This is the data
+integrators read to choose a `methodId` for `authenticate`. `capabilities.auth`
+mirrors the agent's `AgentAuthCapabilities` verbatim; `auth.logout` (present when
+the agent supports `logout`) gates `host.logout`.
 
 `getSession` / `getSessions` return `SessionSnapshot`:
 `{ sessionId, status, agentId?, cwd, mcpServers?, additionalDirectories, agentDefinitionId?, title?, updatedAt? }`.
@@ -191,11 +198,11 @@ reduction. The `agent/spawn` diagnostic records only env key names, never values
   cwds are absolutized with `path.resolve` before reaching the protocol.
 - **kill timeout**: defaults to 5s (`killTimeoutMs` is injectable); dispose ends
   stdin first (graceful), then sends `SIGKILL` on timeout.
-- **auth errors**: acpjs runs no authenticate flow and exposes no login APIs or
-  auth state; it only surfaces the agent's advertised `authMethods` (see
-  Snapshots) for integrators to act on. Agent-side authentication failures are
-  propagated as agent JSON-RPC errors; callers configure/login the agent outside
-  acpjs and retry.
+- **auth errors**: acpjs surfaces `authenticate`/`logout` as typed mechanism but
+  stores no credentials and tracks no login state; the integrator picks the
+  `methodId` (from the advertised `authMethods`, see Snapshots) and decides when
+  to call. Agent-side authentication failures are propagated as agent JSON-RPC
+  errors; callers authenticate the agent and retry.
 - **prompt protocol errors**: `prompt` rejects on agent JSON-RPC/protocol
   errors instead of fabricating a `StopReason`. Direct host callers receive the
   agent error object; callers through `createHostEndpoint` receive

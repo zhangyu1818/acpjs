@@ -24,7 +24,10 @@ export interface InstallerDeps {
   fetchImpl: (url: string) => Promise<Response>
   now: () => number
   emitProgress: (agentId: string, payload: InstallProgressPayload) => void
+  maxDownloadBytes?: number
 }
+
+const DEFAULT_MAX_DOWNLOAD_BYTES = 1024 * 1024 * 1024
 
 export async function pathExists(path: string): Promise<boolean> {
   try {
@@ -70,10 +73,20 @@ async function download(
       `download failed with status ${response.status}`,
     )
   }
+  const maxBytes = deps.maxDownloadBytes ?? DEFAULT_MAX_DOWNLOAD_BYTES
   const totalRaw = Number(response.headers.get('content-length'))
   const total = Number.isFinite(totalRaw) && totalRaw > 0 ? totalRaw : undefined
   const body = response.body
-  if (!body) return Buffer.from(await response.arrayBuffer())
+  if (!body) {
+    const buffer = Buffer.from(await response.arrayBuffer())
+    if (buffer.length > maxBytes) {
+      throw new RegistryError(
+        'registry/download-failed',
+        `download exceeds maximum size of ${maxBytes} bytes`,
+      )
+    }
+    return buffer
+  }
   const reader = body.getReader()
   const chunks: Uint8Array[] = []
   let received = 0
@@ -83,6 +96,13 @@ async function download(
     if (value.length === 0) continue
     chunks.push(value)
     received += value.length
+    if (received > maxBytes) {
+      await reader.cancel()
+      throw new RegistryError(
+        'registry/download-failed',
+        `download exceeds maximum size of ${maxBytes} bytes`,
+      )
+    }
     deps.emitProgress(agentId, {
       stage: 'downloading',
       ...stageMeta,
@@ -123,10 +143,10 @@ export async function installBinary(
   }
 
   const format = archiveFormatFor(target.archive)
-  if (format === 'installer') {
+  if (format === 'unsupported') {
     throw new RegistryError(
       'registry/unsupported-archive',
-      `installer archive formats are not supported: ${target.archive}`,
+      `archive format is not supported: ${target.archive}`,
     )
   }
 

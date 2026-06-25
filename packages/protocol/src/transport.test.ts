@@ -38,6 +38,8 @@ test('host method names form the host contract shared by core and client', () =>
     restoreSessions: 'sessions/restore',
     listAgents: 'agents/list',
     disposeAgent: 'agents/dispose',
+    authenticate: 'agents/authenticate',
+    logout: 'agents/logout',
   })
   expect(Object.isFrozen(ACPJS_HOST_METHODS)).toBe(true)
 })

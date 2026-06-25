@@ -379,6 +379,38 @@ test('ensureInstalled rejects installer archive formats without downloading or l
   await expect(stat(join(cacheDir, 'agents', 'codex-acp'))).rejects.toThrow()
 })
 
+test('ensureInstalled rejects a bz2 archive as unsupported without downloading or leaving residue', async () => {
+  const cacheDir = await makeTmpDir()
+  const entry = {
+    ...binaryOnlyEntry,
+    distribution: {
+      binary: {
+        'darwin-aarch64': {
+          archive: 'https://example.com/codex-acp-darwin-aarch64.tar.bz2',
+          cmd: './codex-acp',
+        },
+      },
+    },
+  }
+  const client = createRegistryClient({
+    cacheDir,
+    fetch: routedFetch({
+      [DEFAULT_INDEX_URL]: () => Response.json(makeIndex([entry])),
+    }),
+    platform: 'darwin',
+    arch: 'arm64',
+    pathProbe: noHit,
+  })
+  const events = collect(client)
+
+  await expect(client.ensureInstalled('codex-acp')).rejects.toMatchObject({
+    code: 'registry/unsupported-archive',
+  })
+
+  expect(stages(events)).toEqual(['resolving', 'failed'])
+  await expect(stat(join(cacheDir, 'agents', 'codex-acp'))).rejects.toThrow()
+})
+
 test('ensureInstalled fails with install-failed and leaves no partial cache when the extracted archive lacks the cmd', async () => {
   const cacheDir = await makeTmpDir()
   const archive = await makeTarGz({ 'something-else': 'not the cmd' })

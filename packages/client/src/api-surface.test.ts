@@ -64,7 +64,9 @@ test('facade objects expose no raw host-envelope, raw notification or selector e
   ])
   expect(Object.keys(agent).sort()).toEqual([
     'agentId',
+    'authenticate',
     'getSnapshot',
+    'logout',
     'sessions',
     'subscribe',
   ])

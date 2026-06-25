@@ -13,6 +13,7 @@ interface TerminalState {
   output: string
   truncated: boolean
   limit: number | undefined
+  released: boolean
   exit: { exitCode: number | null; signal: string | null } | undefined
   exited: Promise<{ exitCode: number | null; signal: string | null }>
 }
@@ -78,14 +79,17 @@ export function createDefaultTerminalHandler(
         output: '',
         truncated: false,
         limit: params.outputByteLimit ?? undefined,
+        released: false,
         exit: undefined,
         exited: new Promise((resolvePromise) => {
           proc.once('exit', (exitCode, signal) => {
             state.exit = { exitCode, signal }
-            emit?.(params.sessionId, {
-              terminalId,
-              exit: exitStatus(state.exit),
-            })
+            if (!state.released) {
+              emit?.(params.sessionId, {
+                terminalId,
+                exit: exitStatus(state.exit),
+              })
+            }
             resolvePromise(state.exit)
           })
         }),
@@ -93,6 +97,7 @@ export function createDefaultTerminalHandler(
       const append = (chunk: Buffer) => {
         state.output += chunk.toString('utf8')
         truncateToLimit(state)
+        if (state.released) return
         emit?.(params.sessionId, {
           terminalId,
           delta: chunk.toString('utf8'),
@@ -133,6 +138,7 @@ export function createDefaultTerminalHandler(
     },
     async releaseTerminal(params) {
       const state = requireTerminal(params.sessionId, params.terminalId)
+      state.released = true
       if (state.exit === undefined) state.proc.kill('SIGKILL')
       terminals.delete(params.terminalId)
       return {}
@@ -140,6 +146,7 @@ export function createDefaultTerminalHandler(
     cleanupSession(sessionId) {
       for (const [terminalId, state] of terminals) {
         if (state.sessionId !== sessionId) continue
+        state.released = true
         if (state.exit === undefined) state.proc.kill('SIGKILL')
         terminals.delete(terminalId)
       }

@@ -8,6 +8,7 @@ function capabilitiesSnapshot(
   const capabilities = handle.capabilities
   if (capabilities === undefined) return undefined
   return {
+    ...(capabilities.auth === undefined ? {} : { auth: capabilities.auth }),
     ...(capabilities.loadSession === undefined
       ? {}
       : { loadSession: capabilities.loadSession }),

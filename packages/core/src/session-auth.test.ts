@@ -64,3 +64,44 @@ test('agent auth error during prompt rejects and returns active', async () => {
     host.prompt(created.sessionId, [{ type: 'text', text: 'retry' }]),
   ).resolves.toEqual({ stopReason: 'end_turn' })
 })
+
+test('authenticate flips the agent state so a retried createSession succeeds', async () => {
+  const host = trackHost(createAcpHost())
+  const { definition } = await fixtureDefinition({
+    initialize: { authMethods: [{ id: 'device', name: 'Device flow' }] },
+    session: { sessionId: 'sess-auth', authRequired: true },
+  })
+  const agent = await host.spawnAgent(definition)
+
+  const error = await rejectionOf(
+    host.createSession(agent.agentId, sessionParams('/tmp')),
+  )
+  expect(error).toMatchObject({ code: -32000 })
+
+  await host.authenticate(agent.agentId, 'device')
+
+  const created = await host.createSession(agent.agentId, sessionParams('/tmp'))
+  expect(created.sessionId).toBe('sess-auth')
+  expect(created.status).toBe('active')
+})
+
+test('logout surfaces the auth capability and resolves when the agent supports it', async () => {
+  const host = trackHost(createAcpHost())
+  const { definition } = await fixtureDefinition({
+    initialize: { agentCapabilities: { auth: { logout: {} } } },
+  })
+  const agent = await host.spawnAgent(definition)
+
+  expect(host.getAgent(agent.agentId)?.capabilities?.auth?.logout).toBeDefined()
+  await expect(host.logout(agent.agentId)).resolves.toBeUndefined()
+})
+
+test('logout rejects with capability-unsupported when the agent does not advertise it', async () => {
+  const host = trackHost(createAcpHost())
+  const { definition } = await fixtureDefinition({})
+  const agent = await host.spawnAgent(definition)
+
+  expect(await rejectionOf(host.logout(agent.agentId))).toMatchObject({
+    code: 'acpjs/capability-unsupported',
+  })
+})

@@ -121,6 +121,7 @@ export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
       modeId?: string
       configId?: string
       value?: SessionConfigValue
+      methodId?: string
     }
     const {
       definition,
@@ -134,6 +135,7 @@ export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
       modeId,
       configId,
       value,
+      methodId,
     } = params
     switch (request.method) {
       case ACPJS_HOST_METHODS.spawnAgent: {
@@ -229,6 +231,17 @@ export function createHostEndpoint(host: AcpHost): EnvelopeEndpoint {
       }
       case ACPJS_HOST_METHODS.disposeAgent: {
         await host.disposeAgent(requireParam(agentId, 'agentId'))
+        return null
+      }
+      case ACPJS_HOST_METHODS.authenticate: {
+        await host.authenticate(
+          requireParam(agentId, 'agentId'),
+          requireParam(methodId, 'methodId'),
+        )
+        return null
+      }
+      case ACPJS_HOST_METHODS.logout: {
+        await host.logout(requireParam(agentId, 'agentId'))
         return null
       }
       default: {

@@ -10,7 +10,7 @@ The default data source is the official ACP registry CDN: `https://cdn.agentclie
 pnpm add @acpjs/registry
 ```
 
-`@acpjs/protocol` is the only runtime dependency (it provides the host event shapes used by `subscribe`).
+Runtime dependencies are `@acpjs/protocol` (host event shapes used by `subscribe`) and [node-tar](https://github.com/isaacs/node-tar) (in-process tar extraction).
 
 ## Quick start
 
@@ -97,9 +97,11 @@ A `RegistryEntry` has the shape `{ id, name, version, description, distribution,
 
 ### Archive formats
 
-- Extracted: `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2`, `.zip`.
+- Extracted: `.tar.gz`, `.tgz` (gzip tar), `.zip`.
 - Any other suffix (for example `.exe`) is treated as a raw binary and written straight to disk — there is no `extracting` stage for raw binaries.
-- Installer formats `.dmg`, `.pkg`, `.deb`, `.rpm` are rejected with `RegistryError('registry/unsupported-archive')` before any download occurs.
+- Unsupported formats are rejected with `RegistryError('registry/unsupported-archive')` before any download occurs: the installer formats `.dmg`, `.pkg`, `.deb`, `.rpm`, and bzip2 tars `.tar.bz2`, `.tbz2` (node-tar does not decompress bzip2).
+- Tar extraction runs in-process via [node-tar](https://github.com/isaacs/node-tar) — there is no dependency on a system `tar`. node-tar's defaults are kept on: leading `/` is stripped, entries containing `..` are refused, and extraction never writes through a symlink, so a malicious archive cannot escape the extraction directory.
+- Downloads are capped at 1 GiB by default (a `registry/download-failed` is thrown if exceeded). Each deflate zip entry is capped at 256 MiB of inflated output (zip-bomb guard) in addition to the zip-slip path guard.
 
 ## Diagnostics and error codes
 
@@ -112,7 +114,7 @@ A `RegistryEntry` has the shape `{ id, name, version, description, distribution,
 | `RegistryError`     | `registry/agent-not-found`      | No entry with the given `agentId` in the index                                  |
 | `RegistryError`     | `registry/no-distribution`      | Entry has no usable distribution form                                           |
 | `RegistryError`     | `registry/platform-unsupported` | No binary target for the current platform, or the platform key cannot be mapped |
-| `RegistryError`     | `registry/unsupported-archive`  | Installer format (`.dmg`/`.pkg`/`.deb`/`.rpm`)                                  |
+| `RegistryError`     | `registry/unsupported-archive`  | Unsupported format (`.dmg`/`.pkg`/`.deb`/`.rpm`, or bzip2 `.tar.bz2`/`.tbz2`)   |
 | `RegistryError`     | `registry/download-failed`      | Download threw or returned a non-2xx status                                     |
 | `RegistryError`     | `registry/install-failed`       | Post-extraction error, e.g. `cmd` not found in the archive                      |
 
@@ -121,9 +123,9 @@ Every `RegistryError` carries a `code` (`RegistryErrorCode`) you can branch on.
 ## Known constraints
 
 - **No checksum or signature verification.** The current registry index carries no integrity values, so download integrity cannot be verified at the registry layer and relies entirely on TLS and the official CDN. The `verifying` stage of the install state machine is skipped and emits no event. If the index begins to publish integrity values this must be implemented.
-- **Installer archive formats are not supported** (`.dmg`, `.pkg`, `.deb`, `.rpm`); they are rejected before download.
+- **Installer and bzip2 archive formats are not supported** (`.dmg`, `.pkg`, `.deb`, `.rpm`, `.tar.bz2`, `.tbz2`); they are rejected before download.
 - **Windows binaries** are written and `chmod`'d like any other platform; execution semantics depend on the published `cmd`.
-- **Node-only and ESM-only.** Requires `node >= 24`; uses `node:child_process` (`tar`), `node:fs`, `node:zlib`, and the global `fetch`.
+- **Node-only and ESM-only.** Requires `node >= 24`; uses [node-tar](https://github.com/isaacs/node-tar), `node:fs`, `node:zlib`, and the global `fetch`.
 
 ## Implementation-defined decisions
 
@@ -135,7 +137,7 @@ The ACP spec leaves several points implementation-defined. This package resolves
 - **PATH probe** — candidate names are the basename of the current platform's binary `cmd` and the entry `id` (deduplicated, in that order). The default probe walks each directory in `PATH` checking for execute permission (on windows it also tries `.exe`/`.cmd` suffixes). Override via `pathProbe`. On a hit, `args`/`env` come from the current platform's binary target, or — when there is no binary target — from the `npx`/`uvx` form.
 - **Verifying (skipped)** — see "Known constraints"; no integrity values exist in the index, so the stage is skipped.
 - **`npx`/`uvx` precedence** — when a distribution contains both, `npx` is preferred. No extra flags (such as `-y`) are injected; `args` is exactly `[package, ...dist.args]`.
-- **Tar extraction** — performed via the system `tar -xf` (bundled with macOS, Linux, and Windows 10+; gz/bz2 compression is auto-detected). Zip uses a built-in pure-JS reader (store/deflate, compression methods 0 and 8 only). Both zip entry paths and `cmd` resolution are guarded against directory traversal escapes.
+- **Tar extraction** — performed in-process via [node-tar](https://github.com/isaacs/node-tar) (`extract`); gzip is decompressed transparently. Its security defaults are kept on: leading `/` stripped, `..` entries refused, no extraction through symlinks. bzip2 is not decompressed by node-tar and is rejected as `registry/unsupported-archive`. Zip uses a built-in pure-JS reader (store/deflate, compression methods 0 and 8 only); each deflate entry is capped at 256 MiB of inflated output and zip entry paths are guarded against directory traversal escapes. Downloads are buffered with a 1 GiB cap (override via the installer's `maxDownloadBytes`). `cmd` resolution is likewise guarded against escapes.
 - **`meta` pass-through** — registry-sourced `AgentDefinition`s carry `meta: { name, version, registryId, icon? }`.
 - **Download granularity** — the `downloading` stage streams `response.body` and emits `{ stage: 'downloading', downloadedBytes, totalBytes? }` after each chunk (`downloadedBytes` is monotonically increasing; `totalBytes` is taken from the response `content-length` and omitted when absent, while `downloadedBytes` is still reported per chunk). When `response.body` is not streamable, it falls back to a single non-chunked read (no `downloadedBytes`; only the stage marker is emitted). Empty chunks are skipped.
 - **Subscriber isolation** — a listener that throws is caught and ignored; dispatch to the remaining subscribers continues.

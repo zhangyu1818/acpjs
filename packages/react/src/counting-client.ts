@@ -79,6 +79,12 @@ export function createCountingClient(
       agentStateListeners.add(listener)
       return () => agentStateListeners.delete(listener)
     },
+    async authenticate() {
+      throw new Error('authenticate is not supported by the counting client')
+    },
+    async logout() {
+      throw new Error('logout is not supported by the counting client')
+    },
     sessions: {
       async create() {
         throw new Error('create is not supported by the counting client')

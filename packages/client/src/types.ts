@@ -67,6 +67,8 @@ export interface AcpAgent {
   readonly agentId: string
   getSnapshot: () => AgentSnapshot
   subscribe: (listener: ChangeListener) => () => void
+  authenticate: (methodId: string) => Promise<void>
+  logout: () => Promise<void>
   readonly sessions: AcpAgentSessions
 }
 

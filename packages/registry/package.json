@@ -28,7 +28,8 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "@acpjs/protocol": "workspace:*"
+    "@acpjs/protocol": "workspace:*",
+    "tar": "^7.5.16"
   },
   "devDependencies": {
     "@types/node": "^25.9.2"

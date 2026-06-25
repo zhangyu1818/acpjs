@@ -106,7 +106,8 @@ export class SessionManager {
       session.lifecycleOperation === operation &&
       session.lifecycleOperationId === operationId &&
       session.status !== 'closed' &&
-      session.status !== 'deleted'
+      session.status !== 'deleted' &&
+      session.status !== 'disconnected'
     )
   }
 

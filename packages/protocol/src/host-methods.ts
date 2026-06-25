@@ -19,6 +19,8 @@ export const ACPJS_HOST_METHODS = Object.freeze({
   restoreSessions: 'sessions/restore',
   listAgents: 'agents/list',
   disposeAgent: 'agents/dispose',
+  authenticate: 'agents/authenticate',
+  logout: 'agents/logout',
 } as const)
 
 export type AcpjsHostMethod =

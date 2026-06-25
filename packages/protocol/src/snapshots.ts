@@ -1,4 +1,5 @@
 import type {
+  AgentAuthCapabilities,
   AuthMethod,
   McpCapabilities,
   McpServer,
@@ -11,6 +12,7 @@ import type {
 import type { AgentExitReason, AgentStatus, SessionStatus } from './domain'
 
 export interface AgentCapabilitiesSnapshot {
+  auth?: AgentAuthCapabilities
   loadSession?: boolean
   mcpCapabilities?: McpCapabilities
   nes?: NesCapabilities | null

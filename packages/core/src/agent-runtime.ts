@@ -201,22 +201,7 @@ export class AgentRuntime {
       agentId: handle.agentId,
       data: handle.exit,
     })
-    for (const reject of handle.pendingRejects) reject()
-    handle.pendingRejects.clear()
-    if (handle.disposed || this.#deps.isHostDisposed()) {
-      this.#deps.onAgentDown(handle)
-      if (handle.status !== 'exited') {
-        this.#deps.bus.setAgentStatus(handle, 'exited', 'disposed')
-      }
-      return
-    }
-    if (handle.status === 'ready') {
-      this.#down(handle, 'crashed')
-    } else if (handle.status === 'initializing') {
-      this.#down(handle, 'initialize-failed')
-    } else if (handle.status === 'spawning') {
-      this.#down(handle, 'spawn-failed')
-    }
+    this.#settleDown(handle)
   }
 
   #onConnectionClosed(
@@ -239,6 +224,12 @@ export class AgentRuntime {
     ) {
       proc.kill()
     }
+    this.#settleDown(handle)
+  }
+
+  #settleDown(handle: AgentHandle): void {
+    for (const reject of handle.pendingRejects) reject()
+    handle.pendingRejects.clear()
     if (handle.disposed || this.#deps.isHostDisposed()) {
       this.#deps.onAgentDown(handle)
       if (handle.status !== 'exited') {

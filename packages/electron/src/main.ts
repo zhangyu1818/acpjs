@@ -46,8 +46,9 @@ export function attachAcpBridge(host: AcpHost): DetachAcpBridge {
           '@acpjs/electron: handshake rejected, contextIsolation must be enabled for this window',
         )
       }
-      const { port1, port2 } = new MessageChannelMain()
       const sender = event.sender
+      if (sender.isDestroyed()) return
+      const { port1, port2 } = new MessageChannelMain()
       const detach = wireEndpointToPort(endpoint, asWirePort(port1), () => {
         detachers.delete(detach)
         sender.removeListener('destroyed', detach)

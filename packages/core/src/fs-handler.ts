@@ -17,7 +17,17 @@ async function realRoots(
   roots: readonly string[] | undefined,
 ): Promise<string[]> {
   if (roots === undefined) throw new Error('unknown session roots')
-  return Promise.all(roots.map((root) => realpath(resolve(root))))
+  const resolved = await Promise.all(
+    roots.map(async (root) => {
+      try {
+        return await realpath(resolve(root))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+        throw error
+      }
+    }),
+  )
+  return resolved.filter((root): root is string => root !== undefined)
 }
 
 function requireRealPathInRoots(path: string, roots: readonly string[]): void {
@@ -82,11 +92,13 @@ export function createDefaultFsHandler(
         return { content: text }
       }
       const lines = text.split('\n')
-      const start = (params.line ?? 1) - 1
+      const start = Math.max(0, (params.line ?? 1) - 1)
       const selected =
         params.limit == null
           ? lines.slice(start)
-          : lines.slice(start, start + params.limit)
+          : params.limit <= 0
+            ? []
+            : lines.slice(start, start + params.limit)
       return { content: selected.join('\n') }
     },
     async writeTextFile(params) {
