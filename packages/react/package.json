@@ -1,6 +1,6 @@
 {
   "name": "@acpjs/react",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "acpjs React hooks and Provider over @acpjs/client (headless, no UI).",
   "license": "MIT",
   "repository": {
