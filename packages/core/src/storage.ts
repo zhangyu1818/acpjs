@@ -22,7 +22,7 @@ export interface StorageAdapter {
   loadEvents(
     sessionId: string,
     fromSeq?: number,
-  ): AcpjsEvent[] | Promise<AcpjsEvent[]>
+  ): AcpjsSessionEvent[] | Promise<AcpjsSessionEvent[]>
   replaceSession(
     sessionId: string,
     meta: SessionMeta,
@@ -192,7 +192,7 @@ export function createJsonlStorage(file: string): StorageAdapter {
     async loadEvents(sessionId, fromSeq = 0) {
       const events = await readEvents()
       return events.filter(
-        (event) =>
+        (event): event is AcpjsSessionEvent =>
           isSessionEvent(event) &&
           event.sessionId === sessionId &&
           event.seq > fromSeq,

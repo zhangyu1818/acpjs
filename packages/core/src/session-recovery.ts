@@ -97,7 +97,7 @@ export async function restoreSessions(
         })
         continue
       }
-      valid.push(event as AcpjsSessionEvent)
+      valid.push(event)
     }
     const eventsWithClosedPermissions = closeStalePermissions(valid)
     const lastRestoredStatus = eventsWithClosedPermissions.findLast(
