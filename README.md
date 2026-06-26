@@ -6,15 +6,15 @@ Design rule: **mechanism, not decision.** acpjs owns plumbing (spawn, connection
 
 ## Packages
 
-| Package | Role | Entry |
-| --- | --- | --- |
-| `@acpjs/protocol` | Normalized event model, `SessionState`, pure `reduce`, host transport contract types. Types + pure functions only, environment-neutral. | [README](./packages/protocol/README.md) |
-| `@acpjs/core` | Node `AcpHost`: spawns agents, drives the ACP connection, normalizes/numbers events, replays for late subscribers, routes permissions, default fs, opt-in terminal, restart + storage. | [README](./packages/core/README.md) |
-| `@acpjs/client` | Typed facade + reducer-driven snapshot/subscribe store over the HostClientTransport contract; built-in in-process transport. | [README](./packages/client/README.md) |
-| `@acpjs/react` | `<AcpProvider>` + hooks (`useSession`, `useAgent`, …) on `useSyncExternalStore`. No state-library dependency. | [README](./packages/react/README.md) |
-| `@acpjs/electron` | Electron bridge: `/main`, `/preload`, `/renderer` entries that hand off over a `MessageChannelMain` port. | [README](./packages/electron/README.md) |
-| `@acpjs/registry` | ACP registry fetch/cache, `AgentDefinition` resolution, `ensureInstalled` (four-tier). | [README](./packages/registry/README.md) |
-| `@acpjs/fixture-agent` | **Private.** Scripted protocol-replay agent used as an E2E test fixture. | [README](./packages/fixture-agent/README.md) |
+| Package                | Role                                                                                                                                                                                   | Entry                                        |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `@acpjs/protocol`      | Normalized event model, `SessionState`, pure `reduce`, host transport contract types. Types + pure functions only, environment-neutral.                                                | [README](./packages/protocol/README.md)      |
+| `@acpjs/core`          | Node `AcpHost`: spawns agents, drives the ACP connection, normalizes/numbers events, replays for late subscribers, routes permissions, default fs, opt-in terminal, restart + storage. | [README](./packages/core/README.md)          |
+| `@acpjs/client`        | Typed facade + reducer-driven snapshot/subscribe store over the HostClientTransport contract; built-in in-process transport.                                                           | [README](./packages/client/README.md)        |
+| `@acpjs/react`         | `<AcpProvider>` + hooks (`useSession`, `useAgent`, …) on `useSyncExternalStore`. No state-library dependency.                                                                          | [README](./packages/react/README.md)         |
+| `@acpjs/electron`      | Electron bridge: `/main`, `/preload`, `/renderer` entries that hand off over a `MessageChannelMain` port.                                                                              | [README](./packages/electron/README.md)      |
+| `@acpjs/registry`      | ACP registry fetch/cache, `AgentDefinition` resolution, `ensureInstalled` (four-tier).                                                                                                 | [README](./packages/registry/README.md)      |
+| `@acpjs/fixture-agent` | **Private.** Scripted protocol-replay agent used as an E2E test fixture.                                                                                                               | [README](./packages/fixture-agent/README.md) |
 
 ## Architecture
 
@@ -82,10 +82,24 @@ function Chat({ sessionId }: { sessionId: string }) {
   if (!session) return null
   return (
     <>
-      {session.state.messages.map((m, i) => <p key={i}>{JSON.stringify(m.content)}</p>)}
-      <button onClick={() => void session.prompt([{ type: 'text', text: 'hi' }])}>Send</button>
+      {session.state.messages.map((m, i) => (
+        <p key={i}>{JSON.stringify(m.content)}</p>
+      ))}
+      <button
+        onClick={() => void session.prompt([{ type: 'text', text: 'hi' }])}
+      >
+        Send
+      </button>
       {permissions.map((r) => (
-        <button key={r.requestId} onClick={() => void r.respond({ outcome: 'selected', optionId: r.options[0]?.optionId ?? '' })}>
+        <button
+          key={r.requestId}
+          onClick={() =>
+            void r.respond({
+              outcome: 'selected',
+              optionId: r.options[0]?.optionId ?? '',
+            })
+          }
+        >
           Allow
         </button>
       ))}
@@ -122,15 +136,15 @@ await host.spawnAgent(definition)
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `pnpm build` | Build all packages (`turbo build`). |
-| `pnpm test` | Full test suite (`turbo test`). |
-| `pnpm typecheck` | Type-check all packages. |
-| `pnpm lint` / `pnpm lint:fix` | oxlint. |
-| `pnpm format` / `pnpm format:check` | oxfmt. |
-| `pnpm check` | Dependency-direction, browser-neutrality, and publish checks. |
-| `pnpm clean` | Remove build outputs and caches. |
+| Command                             | Description                                                   |
+| ----------------------------------- | ------------------------------------------------------------- |
+| `pnpm build`                        | Build all packages (`turbo build`).                           |
+| `pnpm test`                         | Full test suite (`turbo test`).                               |
+| `pnpm typecheck`                    | Type-check all packages.                                      |
+| `pnpm lint` / `pnpm lint:fix`       | oxlint.                                                       |
+| `pnpm format` / `pnpm format:check` | oxfmt.                                                        |
+| `pnpm check`                        | Dependency-direction, browser-neutrality, and publish checks. |
+| `pnpm clean`                        | Remove build outputs and caches.                              |
 
 pnpm workspace (`pnpm ≥ 10`), `workspace:*` internal refs, `tsdown` builds, turborepo orchestration, changesets release.
 

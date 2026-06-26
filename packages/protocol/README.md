@@ -15,11 +15,27 @@ ESM-only, `node >= 24`.
 `reduce(state, event)` is pure. Fold events in `seq` order from `createInitialSessionState(sessionId)`; identical sequences yield field-for-field identical state.
 
 ```ts
-import { createInitialSessionState, reduce, type AcpjsEvent } from '@acpjs/protocol'
+import {
+  createInitialSessionState,
+  reduce,
+  type AcpjsEvent,
+} from '@acpjs/protocol'
 
 const events: AcpjsEvent[] = [
-  { sessionId: 's', seq: 1, ts: 0, type: 'agent-message-chunk', payload: { content: { type: 'text', text: 'Hel' }, messageId: 'm1' } },
-  { sessionId: 's', seq: 2, ts: 0, type: 'agent-message-chunk', payload: { content: { type: 'text', text: 'lo' }, messageId: 'm1' } },
+  {
+    sessionId: 's',
+    seq: 1,
+    ts: 0,
+    type: 'agent-message-chunk',
+    payload: { content: { type: 'text', text: 'Hel' }, messageId: 'm1' },
+  },
+  {
+    sessionId: 's',
+    seq: 2,
+    ts: 0,
+    type: 'agent-message-chunk',
+    payload: { content: { type: 'text', text: 'lo' }, messageId: 'm1' },
+  },
 ]
 
 let state = createInitialSessionState('s')

@@ -13,20 +13,38 @@ ESM-only, `node >= 24` (also browser/renderer-safe).
 ## Usage (in-process)
 
 ```ts
-import { createAcpClient, createInProcessTransport, AcpClientError } from '@acpjs/client'
+import {
+  createAcpClient,
+  createInProcessTransport,
+  AcpClientError,
+} from '@acpjs/client'
 import { createAcpHost, createHostEndpoint } from '@acpjs/core'
 
 const host = createAcpHost()
-const client = createAcpClient({ transport: createInProcessTransport(createHostEndpoint(host)) })
+const client = createAcpClient({
+  transport: createInProcessTransport(createHostEndpoint(host)),
+})
 
-const agent = await client.agents.spawn({ id: 'my-agent', command: 'npx', args: ['some-acp-agent'] })
-const session = await agent.sessions.create({ cwd: process.cwd(), mcpServers: [], additionalDirectories: [] })
+const agent = await client.agents.spawn({
+  id: 'my-agent',
+  command: 'npx',
+  args: ['some-acp-agent'],
+})
+const session = await agent.sessions.create({
+  cwd: process.cwd(),
+  mcpServers: [],
+  additionalDirectories: [],
+})
 session.subscribe(() => render(session.getSnapshot()))
 
 client.permissions.subscribe((requests) => {
   for (const r of requests) {
-    r.respond({ outcome: 'selected', optionId: r.options[0]?.optionId ?? '' }).catch((e) => {
-      if (e instanceof AcpClientError && e.code === 'acpjs/already-answered') return
+    r.respond({
+      outcome: 'selected',
+      optionId: r.options[0]?.optionId ?? '',
+    }).catch((e) => {
+      if (e instanceof AcpClientError && e.code === 'acpjs/already-answered')
+        return
       throw e
     })
   }

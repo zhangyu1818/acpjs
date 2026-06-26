@@ -31,7 +31,9 @@ let detach: (() => void) | undefined
 app.whenReady().then(async () => {
   await host.spawnAgent({ id: 'a', command: 'npx', args: ['some-acp-agent'] })
   detach = attachAcpBridge(host)
-  await new BrowserWindow({ webPreferences: { preload, contextIsolation: true } }).loadFile('index.html')
+  await new BrowserWindow({
+    webPreferences: { preload, contextIsolation: true },
+  }).loadFile('index.html')
 })
 
 app.on('before-quit', async () => {
@@ -62,7 +64,11 @@ const client = createAcpClient({ transport: electronTransport() })
 ```ts
 const [snap] = await client.agents.list()
 const agent = await client.agents.attach(snap.agentId)
-const session = await agent.sessions.create({ cwd, mcpServers: [], additionalDirectories: [] })
+const session = await agent.sessions.create({
+  cwd,
+  mcpServers: [],
+  additionalDirectories: [],
+})
 ```
 
 ## Key semantics

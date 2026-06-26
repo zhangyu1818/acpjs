@@ -17,14 +17,20 @@ import { createAcpHost } from '@acpjs/core'
 
 const host = createAcpHost({ restart: 'on-crash' })
 
-const agent = await host.spawnAgent({ id: 'my-agent', command: 'npx', args: ['some-acp-agent'] })
+const agent = await host.spawnAgent({
+  id: 'my-agent',
+  command: 'npx',
+  args: ['some-acp-agent'],
+})
 const { sessionId } = await host.createSession(agent.agentId, {
   cwd: process.cwd(),
   mcpServers: [],
   additionalDirectories: [],
 })
 
-const unsubscribe = host.subscribe(sessionId, 0, (event) => console.log(event.seq, event.type))
+const unsubscribe = host.subscribe(sessionId, 0, (event) =>
+  console.log(event.seq, event.type),
+)
 const result = await host.prompt(sessionId, [{ type: 'text', text: 'hello' }])
 
 unsubscribe()
@@ -56,15 +62,15 @@ await host.dispose()
 
 ## HostOptions
 
-| Field | Default | Notes |
-| --- | --- | --- |
-| `restart` | `'never'` | `'on-crash'` restarts only on a `crashed` exit. |
-| `restartLimit` | `3` | Max consecutive restarts; `ready` resets the counter. |
-| `restartBackoff` | `{ initialMs: 1000, factor: 2, maxMs: 30000 }` | Exponential backoff. |
-| `storage` | in-memory | `StorageAdapter`. |
-| `fs` | built-in Node fs | Replaced wholesale when injected; drives the initialize capability report. |
-| `terminal` | disabled | Requires a complete handler with `cleanupSession`. |
-| `killTimeoutMs` | `5000` | dispose graceful-shutdown timeout; SIGKILL after. |
+| Field            | Default                                        | Notes                                                                      |
+| ---------------- | ---------------------------------------------- | -------------------------------------------------------------------------- |
+| `restart`        | `'never'`                                      | `'on-crash'` restarts only on a `crashed` exit.                            |
+| `restartLimit`   | `3`                                            | Max consecutive restarts; `ready` resets the counter.                      |
+| `restartBackoff` | `{ initialMs: 1000, factor: 2, maxMs: 30000 }` | Exponential backoff.                                                       |
+| `storage`        | in-memory                                      | `StorageAdapter`.                                                          |
+| `fs`             | built-in Node fs                               | Replaced wholesale when injected; drives the initialize capability report. |
+| `terminal`       | disabled                                       | Requires a complete handler with `cleanupSession`.                         |
+| `killTimeoutMs`  | `5000`                                         | dispose graceful-shutdown timeout; SIGKILL after.                          |
 
 Frozen once constructed; rebuild the host to change it.
 

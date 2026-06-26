@@ -22,27 +22,69 @@ import {
 ```ts
 import { spawn } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
-import { client, methods, ndJsonStream, PROTOCOL_VERSION, type SessionNotification } from '@agentclientprotocol/sdk'
-import { fixtureAgentCliPath, writeScenarioFile, type FixtureScenario } from '@acpjs/fixture-agent'
+import {
+  client,
+  methods,
+  ndJsonStream,
+  PROTOCOL_VERSION,
+  type SessionNotification,
+} from '@agentclientprotocol/sdk'
+import {
+  fixtureAgentCliPath,
+  writeScenarioFile,
+  type FixtureScenario,
+} from '@acpjs/fixture-agent'
 
 const scenario: FixtureScenario = {
   turns: [
-    { steps: [{ kind: 'update', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } } }], stopReason: 'end_turn' },
+    {
+      steps: [
+        {
+          kind: 'update',
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'hi' },
+          },
+        },
+      ],
+      stopReason: 'end_turn',
+    },
   ],
 }
 
 const scenarioPath = await writeScenarioFile(scenario)
-const child = spawn(process.execPath, [fixtureAgentCliPath, '--scenario', scenarioPath], { stdio: ['pipe', 'pipe', 'pipe'] })
+const child = spawn(
+  process.execPath,
+  [fixtureAgentCliPath, '--scenario', scenarioPath],
+  { stdio: ['pipe', 'pipe', 'pipe'] },
+)
 
 const updates: SessionNotification[] = []
 const app = client({ name: 'fixture-example' })
-  .onNotification(methods.client.session.update, ({ params }) => updates.push(params))
-  .onRequest(methods.client.session.requestPermission, () => ({ outcome: { outcome: 'cancelled' } }))
-const conn = app.connect(ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>))
+  .onNotification(methods.client.session.update, ({ params }) =>
+    updates.push(params),
+  )
+  .onRequest(methods.client.session.requestPermission, () => ({
+    outcome: { outcome: 'cancelled' },
+  }))
+const conn = app.connect(
+  ndJsonStream(
+    Writable.toWeb(child.stdin),
+    Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
+  ),
+)
 
-await conn.agent.request(methods.agent.initialize, { protocolVersion: PROTOCOL_VERSION })
-const { sessionId } = await conn.agent.request(methods.agent.session.new, { cwd: '/tmp', mcpServers: [] })
-await conn.agent.request(methods.agent.session.prompt, { sessionId, prompt: [{ type: 'text', text: 'hello' }] })
+await conn.agent.request(methods.agent.initialize, {
+  protocolVersion: PROTOCOL_VERSION,
+})
+const { sessionId } = await conn.agent.request(methods.agent.session.new, {
+  cwd: '/tmp',
+  mcpServers: [],
+})
+await conn.agent.request(methods.agent.session.prompt, {
+  sessionId,
+  prompt: [{ type: 'text', text: 'hello' }],
+})
 // updates contains the 'hi' chunk
 conn.close()
 child.kill()
@@ -54,31 +96,55 @@ Every field is optional; `{}` yields a minimal agent that replies to `prompt` wi
 
 ```ts
 interface FixtureScenario {
-  initialize?: { protocolVersion?: number; agentCapabilities?: AgentCapabilities; authMethods?: AuthMethod[] }
-  session?: { sessionId?: string; modes?: SessionModeState; configOptions?: SessionConfigOption[]; authRequired?: boolean; error?: { code: number; message: string; data?: unknown } }
+  initialize?: {
+    protocolVersion?: number
+    agentCapabilities?: AgentCapabilities
+    authMethods?: AuthMethod[]
+  }
+  session?: {
+    sessionId?: string
+    modes?: SessionModeState
+    configOptions?: SessionConfigOption[]
+    authRequired?: boolean
+    error?: { code: number; message: string; data?: unknown }
+  }
   turns?: FixtureTurn[]
-  loadSession?: { replay?: SessionUpdate[]; modes?: SessionModeState; configOptions?: SessionConfigOption[]; error?: { code: number; message: string; data?: unknown }; failures?: number }
+  loadSession?: {
+    replay?: SessionUpdate[]
+    modes?: SessionModeState
+    configOptions?: SessionConfigOption[]
+    error?: { code: number; message: string; data?: unknown }
+    failures?: number
+  }
   listSessions?: { sessions: SessionInfo[]; nextCursor?: string }
-  resumeSession?: { modes?: SessionModeState; configOptions?: SessionConfigOption[]; expectMcpServers?: McpServer[] }
+  resumeSession?: {
+    modes?: SessionModeState
+    configOptions?: SessionConfigOption[]
+    expectMcpServers?: McpServer[]
+  }
   setConfigOption?: { configOptions: SessionConfigOption[] }
 }
 
-interface FixtureTurn { steps?: FixtureStep[]; stopReason?: StopReason; usage?: Usage }
+interface FixtureTurn {
+  steps?: FixtureStep[]
+  stopReason?: StopReason
+  usage?: Usage
+}
 ```
 
 ### Steps (`FixtureStep`, discriminated by `kind`)
 
-| `kind` | Fields | Effect |
-| --- | --- | --- |
-| `update` | `update: SessionUpdate` | Send a `session/update` (type-checked). |
-| `permission` | `toolCall`, `options`, `onSelected?`, `onCancelled?` | Send `session/request_permission`, then run the matching branch. |
-| `readTextFile` | `path`, `line?`, `limit?` | Issue an `fs/read_text_file` reverse request. |
-| `writeTextFile` | `path`, `content` | Issue an `fs/write_text_file` reverse request. |
-| `terminal` | `command`, `args?`, `env?`, `cwd?`, `outputByteLimit?`, `actions?` | Create a terminal; run each action in `actions` in order: `'output' \| 'waitForExit' \| 'kill' \| 'release'`. |
-| `sleep` | `ms` | Wait `ms`; interrupted immediately by `session/cancel`. |
-| `disconnect` | none | Close the transport stream while leaving the process alive. |
-| `error` | `code`, `message`, `data?` | Throw a `RequestError`, ending the turn with a protocol error. |
-| `exit` | `code` | `process.exit(code)` to simulate a crash. |
+| `kind`          | Fields                                                             | Effect                                                                                                        |
+| --------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `update`        | `update: SessionUpdate`                                            | Send a `session/update` (type-checked).                                                                       |
+| `permission`    | `toolCall`, `options`, `onSelected?`, `onCancelled?`               | Send `session/request_permission`, then run the matching branch.                                              |
+| `readTextFile`  | `path`, `line?`, `limit?`                                          | Issue an `fs/read_text_file` reverse request.                                                                 |
+| `writeTextFile` | `path`, `content`                                                  | Issue an `fs/write_text_file` reverse request.                                                                |
+| `terminal`      | `command`, `args?`, `env?`, `cwd?`, `outputByteLimit?`, `actions?` | Create a terminal; run each action in `actions` in order: `'output' \| 'waitForExit' \| 'kill' \| 'release'`. |
+| `sleep`         | `ms`                                                               | Wait `ms`; interrupted immediately by `session/cancel`.                                                       |
+| `disconnect`    | none                                                               | Close the transport stream while leaving the process alive.                                                   |
+| `error`         | `code`, `message`, `data?`                                         | Throw a `RequestError`, ending the turn with a protocol error.                                                |
+| `exit`          | `code`                                                             | `process.exit(code)` to simulate a crash.                                                                     |
 
 ### Permission branching (`FixturePermissionStep`)
 

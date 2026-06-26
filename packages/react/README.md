@@ -31,10 +31,35 @@ function Chat({ sessionId }: { sessionId: string }) {
   if (!session) return null
   return (
     <>
-      {session.state.messages.map((m, i) => <p key={i}>{JSON.stringify(m.content)}</p>)}
-      <button onClick={() => void session.prompt([{ type: 'text', text: 'hi' }])}>Send</button>
+      {session.state.messages.map((m, i) => (
+        <p key={i}>{JSON.stringify(m.content)}</p>
+      ))}
+      <button
+        onClick={() => void session.prompt([{ type: 'text', text: 'hi' }])}
+      >
+        Send
+      </button>
       {permissions.map((r) => (
-        <button key={r.requestId} onClick={() => void r.respond({ outcome: 'selected', optionId: r.options[0]?.optionId ?? '' }).catch((e) => { if (e instanceof AcpClientError && e.code === 'acpjs/already-answered') return; throw e })}>Allow</button>
+        <button
+          key={r.requestId}
+          onClick={() =>
+            void r
+              .respond({
+                outcome: 'selected',
+                optionId: r.options[0]?.optionId ?? '',
+              })
+              .catch((e) => {
+                if (
+                  e instanceof AcpClientError &&
+                  e.code === 'acpjs/already-answered'
+                )
+                  return
+                throw e
+              })
+          }
+        >
+          Allow
+        </button>
       ))}
     </>
   )
@@ -68,7 +93,11 @@ Every read hook accepts an optional `(selector, isEqual?)`. No selector → full
 
 ```ts
 const toolCalls = useSession('s', (s) => s.toolCalls)?.state // whole slice — Object.is is enough
-const agentMsgs = useSession('s', (s) => s.messages.filter((m) => m.kind === 'agent'), shallowEqual)?.state // derived — needs shallowEqual
+const agentMsgs = useSession(
+  's',
+  (s) => s.messages.filter((m) => m.kind === 'agent'),
+  shallowEqual,
+)?.state // derived — needs shallowEqual
 ```
 
 ## Key semantics
