@@ -1,6 +1,6 @@
 {
   "name": "@acpjs/core",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "acpjs AcpHost: agent process lifecycle, ACP connection, event normalization/numbering, fs/terminal defaults, permission routing, restart and StorageAdapter scheduling.",
   "license": "MIT",
   "repository": {
