@@ -17,6 +17,7 @@ import type {
   AuthMethod,
   ClientConnection,
   ContentBlock,
+  Implementation,
   McpServer,
   PermissionOption,
   RequestPermissionOutcome,
@@ -45,6 +46,7 @@ export interface AgentHandle {
   exit: { code?: number; signal?: string } | undefined
   capabilities: AgentCapabilities | undefined
   authMethods: AuthMethod[] | undefined
+  agentInfo: Implementation | undefined
   restartCount: number
   proc: ChildProcess | undefined
   conn: ClientConnection | undefined

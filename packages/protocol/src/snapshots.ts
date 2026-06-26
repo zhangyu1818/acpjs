@@ -1,6 +1,7 @@
 import type {
   AgentAuthCapabilities,
   AuthMethod,
+  Implementation,
   McpCapabilities,
   McpServer,
   NesCapabilities,
@@ -29,6 +30,7 @@ export interface AgentSnapshot {
   exit?: { code?: number; signal?: string }
   capabilities?: AgentCapabilitiesSnapshot
   authMethods?: AuthMethod[]
+  agentInfo?: Implementation
 }
 
 export interface SessionSnapshot {

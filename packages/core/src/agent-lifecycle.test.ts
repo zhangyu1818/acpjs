@@ -31,6 +31,7 @@ test('spawnAgent walks spawning → initializing → ready and caches initialize
     initialize: {
       agentCapabilities: { loadSession: true },
       authMethods: [{ id: 'oauth', name: 'OAuth' }],
+      agentInfo: { name: 'fixture-agent', version: '1.2.3' },
     },
   })
 
@@ -40,9 +41,14 @@ test('spawnAgent walks spawning → initializing → ready and caches initialize
   expect(agent.status).toBe('ready')
   expect(agent.capabilities).toEqual({ loadSession: true })
   expect(agent.authMethods).toEqual([{ id: 'oauth', name: 'OAuth' }])
+  expect(agent.agentInfo).toEqual({ name: 'fixture-agent', version: '1.2.3' })
   expect(host.getAgent(agent.agentId)?.authMethods).toEqual([
     { id: 'oauth', name: 'OAuth' },
   ])
+  expect(host.getAgent(agent.agentId)?.agentInfo).toEqual({
+    name: 'fixture-agent',
+    version: '1.2.3',
+  })
   expect(statuses(events)).toEqual(['spawning', 'initializing', 'ready'])
   const seqs = events.map((event) => event.seq)
   expect(seqs).toEqual(seqs.map((_, index) => index + 1))

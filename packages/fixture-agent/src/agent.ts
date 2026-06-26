@@ -73,6 +73,7 @@ export function createFixtureAgent(
           ? { agentCapabilities: init.agentCapabilities }
           : {}),
         ...(init?.authMethods ? { authMethods: init.authMethods } : {}),
+        ...(init?.agentInfo ? { agentInfo: init.agentInfo } : {}),
       }
     })
     .onRequest(methods.agent.session.new, () => {

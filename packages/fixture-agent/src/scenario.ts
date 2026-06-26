@@ -2,6 +2,7 @@ import type {
   AgentCapabilities,
   AuthMethod,
   EnvVariable,
+  Implementation,
   McpServer,
   PermissionOption,
   SessionConfigOption,
@@ -18,6 +19,7 @@ export interface FixtureScenario {
     protocolVersion?: number
     agentCapabilities?: AgentCapabilities
     authMethods?: AuthMethod[]
+    agentInfo?: Implementation
   }
   session?: {
     sessionId?: string

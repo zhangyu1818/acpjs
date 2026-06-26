@@ -40,6 +40,7 @@ export function agentSnapshot(handle: AgentHandle): AgentSnapshot {
     ...(handle.authMethods === undefined
       ? {}
       : { authMethods: handle.authMethods }),
+    ...(handle.agentInfo === undefined ? {} : { agentInfo: handle.agentInfo }),
   })
 }
 

@@ -51,6 +51,7 @@ export class AgentRuntime {
       exit: undefined,
       capabilities: undefined,
       authMethods: undefined,
+      agentInfo: undefined,
       proc: undefined,
       conn: undefined,
       pendingRejects: new Set(),
@@ -163,6 +164,7 @@ export class AgentRuntime {
       }
       handle.capabilities = init.agentCapabilities
       handle.authMethods = init.authMethods
+      handle.agentInfo = init.agentInfo ?? undefined
       bus.diagnostic('info', 'agent/initialized', {
         message: 'initialize handshake complete',
         agentId: handle.agentId,
