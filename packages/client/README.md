@@ -1,134 +1,76 @@
 # @acpjs/client
 
-Typed facade and reducer-driven client-side store for acpjs. Environment-neutral (no Node built-ins) and connected to any host purely through the acpjs HostClientTransport contract (in-process, Electron renderer, …). It replays the normalized event stream on the client side with the pure reducer from `@acpjs/protocol` into `SessionState`, exposed through a snapshot + subscribe surface. The only runtime dependency is `@acpjs/protocol`; `@acpjs/core` is consumed only through host transport contract types.
+Typed facade + reducer-driven snapshot/subscribe store for acpjs. Environment-neutral; talks to any host purely through the acpjs HostClientTransport contract. Replays the normalized event stream with the pure reducer into `SessionState`.
 
-## Installation
+## Install
 
 ```sh
 pnpm add @acpjs/client
 ```
 
-ESM-only, requires `node >= 24` (also usable in browser / renderer environments).
+ESM-only, `node >= 24` (also browser/renderer-safe).
 
-## Minimal usage (in-process Node)
+## Usage (in-process)
 
 ```ts
-import {
-  AcpClientError,
-  createAcpClient,
-  createInProcessTransport,
-} from '@acpjs/client'
+import { createAcpClient, createInProcessTransport, AcpClientError } from '@acpjs/client'
 import { createAcpHost, createHostEndpoint } from '@acpjs/core'
 
 const host = createAcpHost()
-const transport = createInProcessTransport(createHostEndpoint(host))
-const client = createAcpClient({ transport })
+const client = createAcpClient({ transport: createInProcessTransport(createHostEndpoint(host)) })
 
-const agent = await client.agents.spawn({
-  id: 'my-agent',
-  command: 'npx',
-  args: ['some-acp-agent'],
-})
-
-const session = await agent.sessions.create({
-  cwd: process.cwd(),
-  mcpServers: [],
-  additionalDirectories: [],
-})
+const agent = await client.agents.spawn({ id: 'my-agent', command: 'npx', args: ['some-acp-agent'] })
+const session = await agent.sessions.create({ cwd: process.cwd(), mcpServers: [], additionalDirectories: [] })
 session.subscribe(() => render(session.getSnapshot()))
 
 client.permissions.subscribe((requests) => {
-  for (const request of requests) {
-    // Under multi-client races, a respond rejected with acpjs/already-answered
-    // is the normal path (the pending list has already converged) — ignore it.
-    request
-      .respond({
-        outcome: 'selected',
-        optionId: request.options[0]?.optionId ?? '',
-      })
-      .catch((error) => {
-        if (
-          error instanceof AcpClientError &&
-          error.code === 'acpjs/already-answered'
-        )
-          return
-        throw error
-      })
+  for (const r of requests) {
+    r.respond({ outcome: 'selected', optionId: r.options[0]?.optionId ?? '' }).catch((e) => {
+      if (e instanceof AcpClientError && e.code === 'acpjs/already-answered') return
+      throw e
+    })
   }
 })
 
 await session.prompt([{ type: 'text', text: 'hello' }])
-session.getSnapshot() // cached immutable SessionState reference
-
-// In-process: the host lifecycle is independent of the client. client.dispose()
-// only closes the transport; you must separately await host.dispose() or the
-// agent child processes will leak.
 await client.dispose()
-await host.dispose()
+await host.dispose() // in-process: host lifetime is independent of the client
 ```
 
-## Public API (closed surface)
+## Exports
 
-The facade export surface is exactly three values: `createAcpClient`, `createInProcessTransport`, and `AcpClientError` (pinned by an API snapshot test). There is no raw host-envelope send, no raw protocol notification subscription, and no store selector parameter. For one-import client-side projections, two pure `@acpjs/protocol` values are re-exported alongside them — `reduce` and `createInitialSessionState` — together with the types `AcpjsSessionEvent`, `SessionState`, and `SessionEventOptions` (so a projection over `session.onEvent` needs no second import).
+Closed surface (pinned by an API snapshot test): `createAcpClient`, `createInProcessTransport`, `AcpClientError`. Re-exports from `@acpjs/protocol`: `reduce`, `createInitialSessionState`, and types `AcpjsSessionEvent`, `SessionState`, `SessionEventOptions`.
 
-- `createAcpClient({ transport })` → `AcpClient`
-  - `client.agents.spawn(definition)` → `Promise<AcpAgent>`. `definition` is an `AgentDefinition` (`id`, `command`, `args?`, `env?`, `cwd?`, `meta?`). Read runtime capabilities from `agent.getSnapshot().capabilities`; this projection exposes only acpjs-supported stable ACP capabilities and excludes auth/provider configuration surfaces (the agent's advertised auth methods are surfaced separately as `agent.getSnapshot().authMethods`).
-  - `client.agents.get(agentId)` → `AcpAgent | undefined`: look up a known handle by id (same reference returned by spawn / attach).
-  - `client.agents.getSnapshot()` → `readonly AcpAgent[]`: cached immutable snapshot of the handle set — a new reference is produced only when the set changes (`useSyncExternalStore` compatible).
-  - `client.agents.subscribe(() => ...)`: notification when the agent handle set changes (no immediate callback; read the initial value via `getSnapshot`).
-  - `client.agents.list()` → `Promise<readonly AgentSnapshot[]>`: a one-shot host query of every agent known to the host (`agentId` / `status` / `restartCount` / `reason?` / `exit?` / `capabilities?`), non-reactive.
-  - `client.agents.attach(agentId)` → `Promise<AcpAgent>`: hydrate an agent that already exists on the host into a handle (internally calls `list()` to verify existence). An unknown id rejects with `acpjs/agent-exited`; an existing handle is reused.
-  - `client.agents.dispose(agentId)` → `Promise<void>`: gracefully tear down a single agent (the per-agent counterpart of disposing the whole host). Idempotent — an unknown or already-gone id resolves as a no-op. The agent's sessions transition to `disconnected` (chat history preserved, not closed/deleted), the agent is removed from the host (it leaves `client.agents.getSnapshot()` when the `agent-removed` host event arrives), forwarded over the `agents/dispose` host adapter method.
-  - `client.sessions.get(sessionId)` → `AcpSession | undefined`: look up a known session handle by id. While a session is live, create / load / resume / attach for the same sessionId share one frozen handle. When the session becomes `closed` or `deleted`, its handle is dropped from the client (`get` returns `undefined`); a later reopen (load / attach) builds a **new** handle rather than reviving the old one.
-  - `client.sessions.getSnapshot()` → `readonly AcpSession[]`: cached immutable snapshot of the host-projected session handle set.
-  - `client.sessions.subscribe(() => ...)`: notification when the session handle set changes.
-  - `client.sessions.list()` → `Promise<readonly SessionSnapshot[]>`: a one-shot host query of every session known to the host (`sessionId` / `status` / `agentId?` / `cwd` / `mcpServers?` / `additionalDirectories` / `agentDefinitionId?`), non-reactive.
-  - `client.sessions.attach(sessionId)` → `Promise<AcpSession>`: re-attach to an existing session **without an agent handle** (internally calls `list()`; if present it subscribes and rebuilds state via replay from `fromSeq: 0`). An unknown id rejects with `acpjs/session-closed`. Re-attaching after the old handle was dropped (e.g. a session reopened from `closed`) returns a fresh handle, not the previous reference.
-  - `client.sessions.restore()` → `Promise<readonly SessionSnapshot[]>`: after a host restart, rebuild `disconnected` sessions from storage and return their snapshots.
-  - `client.permissions.getSnapshot()` → `readonly PermissionRequest[]`: cached immutable reference of the pending permission-request list — a new reference is produced only when the set changes.
-  - `client.permissions.subscribe((requests) => ...)`: notification with the latest snapshot on any add/remove of the pending set (new request, respond, other-client answer / superseded); no immediate callback (read the initial value via `getSnapshot`). Each `request` carries `requestId` / `sessionId` / `toolCall` / `options` (protocol pass-through) and `respond(outcome)`.
-  - `client.diagnostics.getSnapshot()` → `readonly DiagnosticEvent[]`: cached immutable snapshot of the diagnostic log — a bounded buffer of the most recent 200 events (oldest evicted), surfacing agent diagnostics such as `stderr`, `spawn-failed`, `restart-scheduled` (with backoff), and `process-error`.
-  - `client.diagnostics.subscribe(() => ...)`: notification when a new diagnostic arrives (no immediate callback; read the initial value via `getSnapshot`).
-  - `client.status.getSnapshot()` → `ConnectionStatusSnapshot` (`{ status: 'connecting' | 'connected' | 'closed', error? }`): cached immutable snapshot of the connection status.
-  - `client.status.subscribe(() => ...)`: notification when the connection status changes (no immediate callback; read the initial value via `getSnapshot`).
-  - `client.dispose()`: close the transport; afterwards every call rejects with `acpjs/transport-closed`.
-- `AcpAgent`
-  - `agent.agentId`: readonly handle property.
-  - `agent.getSnapshot()` → `AgentSnapshot`: cached immutable snapshot of this agent's runtime state (`status` / `restartCount` / `reason?` / `exit?` / `capabilities?` / `authMethods?`). It is driven by host-level `agent-updated` projections. `authMethods?` is the agent's advertised auth methods from the `initialize` response, surfaced verbatim — this is the data integrators read to choose a `methodId` for `authenticate`. `capabilities?.auth` mirrors the agent's `AgentAuthCapabilities`; `auth.logout` gates `agent.logout()`.
-  - `agent.subscribe(() => ...)`: notification when the runtime state changes (no immediate callback; read the initial value via `getSnapshot`).
-  - `agent.authenticate(methodId)` → `Promise<void>`: sends the ACP `authenticate` RPC with the integrator-chosen `methodId`. `agent.logout()` → `Promise<void>`: sends `logout`, gated on the agent's advertised `auth.logout` capability (rejects with `acpjs/capability-unsupported` otherwise). acpjs sends the RPC only — it does not pick the method, store credentials, or track login state.
-  - `agent.sessions.create({ cwd, mcpServers, additionalDirectories })` / `load(sessionId, { cwd, mcpServers, additionalDirectories })` / `list({ cursor?, cwd? })` / `resume(sessionId, { cwd, mcpServers?, additionalDirectories })` / `delete(sessionId)`. `delete(sessionId)` resolves when the host commits its local deleted tombstone and projections; a supported ACP agent `session/delete` call is best-effort remote cleanup.
-- `AcpSession`
-  - `session.sessionId`: readonly id.
-  - `session.getSnapshot()` → `SessionState`: cached immutable reference — a new reference is produced only when a new event arrives (`useSyncExternalStore` compatible).
-  - `session.subscribe((state) => ...)`: notification when state changes (the current value is not replayed; read the initial value via `getSnapshot`).
-  - `session.onEvent((event) => ..., options?)` → `() => void`: a read-only tap on this session's normalized `AcpjsSessionEvent` stream, opening an **independent** subscription (it never perturbs `subscribe` / `getSnapshot`) and returning an unsubscribe fn. `options` is `SessionEventOptions` (`{ readonly fromSeq?: number }`): omitting it is live-only (`fromSeq` defaults to the current `lastSeq`, no historical re-delivery), while `{ fromSeq: 0 }` replays the full current-epoch log in `seq` order and then streams live with no gap and no duplicate. Use it for projections the single reduced `SessionState` cannot express (plan history, per-turn grouping). Caveat: `seq` is per-session and per-load-epoch — it resets on `session-reset` (`loadSession`) and is **not** a durable cross-load cursor (see docs/design-philosophy.md "Stability policy" and docs/recipes.md).
-  - `session.prompt(ContentBlock[])` → `Promise<PromptFinishedPayload>`: protocol content blocks passed through with no rewriting. Also `cancel()`, `close()`, `setMode(modeId)`, `setConfigOption(configId, value)`. `close()` resolves when the host commits its local closed tombstone and projections; a supported ACP agent `session/close` call is best-effort remote cleanup.
-- Slash commands are not a separate API: `SessionState.availableCommands` only enumerates available commands for autocompletion UI. To invoke a command, write a `/`-prefixed text block in the prompt, which may be mixed with other blocks — `session.prompt([{ type: 'text', text: '/web query' }])`. There is no `invokeCommand`-style method.
-- Every error is an `AcpClientError` (an `ErrorObject` shape: `code` (acpjs/\*), `message`, `data?`, `retryable`). A capability-gated method whose capability was not declared rejects with `acpjs/capability-unsupported` (core semantics passed through); a second answer to a permission rejects with `acpjs/already-answered`.
+- Types: `AcpClient`, `AcpAgent`, `AcpSession`, `AcpAgentSessions`, `AgentDefinition`, `ConnectionStatusSnapshot`, `CreateAcpClientOptions`, `CreateOrLoadSessionParams`, `ResumeSessionParams`, `PermissionRequest`, `PermissionListener`, `ChangeListener`, `SessionConfigValue`, `SessionEventOptions`, `SessionListParams`. Plus re-exported `AgentSnapshot`, `SessionSnapshot`, `DiagnosticEvent`, `PromptFinishedPayload`, `RequestPermissionOutcome`, `SessionConfigOption`, `ContentBlock`, `ListSessionsResponse`.
 
-## State construction
+### `createAcpClient({ transport }): AcpClient`
 
-The only client-side state-construction path: the transport receives an `AcpjsEvent` → the `reduce` function from `@acpjs/protocol` replays it in `seq` order. Subscriptions carry `fromSeq`; a late subscriber / reconnection is backfilled by replay and ends up deeply equal to a full-duration subscriber (INV-2). A duplicate event whose `seq` was already applied is ignored.
+- `client.agents` — `spawn(definition): Promise<AcpAgent>`, `get(agentId)`, `getSnapshot(): readonly AcpAgent[]`, `subscribe(cb)`, `list(): Promise<readonly AgentSnapshot[]>`, `attach(agentId): Promise<AcpAgent>` (unknown → `acpjs/agent-exited`), `dispose(agentId): Promise<void>` (idempotent).
+- `client.sessions` — `get(sessionId)`, `getSnapshot(): readonly AcpSession[]`, `subscribe(cb)`, `list(): Promise<readonly SessionSnapshot[]>`, `attach(sessionId): Promise<AcpSession>` (unknown → `acpjs/session-closed`), `restore(): Promise<readonly SessionSnapshot[]>`.
+- `client.permissions` — `getSnapshot(): readonly PermissionRequest[]`, `subscribe((requests) => …)`. Each `request` carries `requestId`/`sessionId`/`toolCall`/`options` and `respond(outcome)`.
+- `client.diagnostics` — `getSnapshot(): readonly DiagnosticEvent[]` (bounded 200, oldest evicted), `subscribe(cb)`.
+- `client.status` — `getSnapshot(): ConnectionStatusSnapshot` (`connecting`/`connected`/`closed`, optional `error`), `subscribe(cb)`.
+- `client.dispose()` — closes the transport; afterwards every call rejects with `acpjs/transport-closed`.
 
-## HostClientTransport
+### `AcpAgent`
 
-The client consumes the acpjs host HostClientTransport contract from `@acpjs/protocol` (`connect` / `request` / `subscribe` / `respondInbound` / `close`, with lifecycle `connecting → connected → closed` plus an error termination path). The built-in `createInProcessTransport(endpoint)` connects to `@acpjs/core`'s `createHostEndpoint(host)` (the client only sees contract types and has zero dependency on core). Reconnection is not a transport obligation; a new connection backfills via `fromSeq`.
+- `agentId` (readonly), `getSnapshot(): AgentSnapshot`, `subscribe(cb)`.
+- `authenticate(methodId): Promise<void>`, `logout(): Promise<void>` (gated on `auth.logout`).
+- `sessions.create({ cwd, mcpServers, additionalDirectories })` / `load(id, …)` / `list({ cursor?, cwd? })` / `resume(id, …)` / `delete(id)`.
 
-## Implementation-defined decisions
+### `AcpSession`
 
-- **host request ids**: transport-local and opaque; consumers should not parse or persist them.
-- **host method ids**: sourced from `@acpjs/protocol`'s `ACPJS_HOST_METHODS` (`agents/spawn|list|dispose|authenticate|logout`, `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`), the same constant table consumed by core's `createHostEndpoint` (pinned by protocol and end-to-end tests). These are acpjs host-client adapter ids, not ACP agent method names.
-- **auth errors**: acpjs surfaces `authenticate`/`logout` as typed mechanism but stores no credentials and tracks no login state; the integrator picks the `methodId` (from the advertised `authMethods`, see `agent.getSnapshot().authMethods` above) and decides when to call. Agent-side authentication failures during create/load/resume/prompt reject as `AcpClientError` with `code: 'acpjs/agent-error'` and the original agent protocol error in `data`.
-- **host projection mirror**: agent/session registries are reactive mirrors of the host stream. A session created by Node/main or another renderer appears in `client.sessions.getSnapshot()` when the client receives `session-updated`; no local create/attach call is required. Symmetrically, an agent disposed on the host (via `disposeAgent`, by this client or another) leaves `client.agents.getSnapshot()` when the client receives the `agent-removed` host event.
-- **store subscription timing**: one store per sessionId; on first acquiring a session handle from create / load / resume / attach or from a host `session-updated` projection it subscribes from `fromSeq: 0`. Within one client the same sessionId reuses the same store, the same frozen handle, and the same subscription. Host projections also update the store's connection status/title fields so list UI can reflect status changes before a prompt event arrives.
-- **subscribe does not call back immediately**: consistent with external-store conventions (session state, agent/session registries, connection status, and the permission list all behave this way); read the initial value via `getSnapshot` / `get`.
-- **connection status store**: `client.status` maintains a single `ConnectionStatusSnapshot`, advancing `connecting → connected → closed` with the transport lifecycle (termination may carry an `error`); entering `closed` also clears the pending permission snapshot. No duplicate notification when neither status nor error changes.
-- **sessions.attach semantics**: does not go through an agent handle — it uses `sessions.list()` to verify the sessionId is still known to the host; if present it creates a store and rebuilds state by replaying from `fromSeq: 0`; an unknown id rejects with `acpjs/session-closed`. Suitable for re-attaching to an existing session across windows / after a page reload.
-- **agents/sessions list/restore are one-shot host queries**: `agents.list()` / `sessions.list()` / `sessions.restore()` are request/response snapshots for enumeration and hydration, returning host `AgentSnapshot` / `SessionSnapshot` projections. Reactive observation uses host projections through the corresponding `getSnapshot` / `subscribe` registries.
-- **permission-request source and exit**: pending permissions are sourced from host-level `permission-updated` projections. Inbound requests are only the response transport path and are not treated as permission state. A request leaves the pending set (and subscribers are notified with a new snapshot) when respond succeeds, when respond is rejected with `acpjs/already-answered` (someone else already answered), or when the host emits `permission-updated` with answered/superseded. A late consumer reading `getSnapshot` only sees still-pending requests. Under multi-client races, a respond rejected with `acpjs/already-answered` is the normal path — the pending list has converged and consumers should ignore that code rather than treat it as an error.
-- **dispose semantics**: mark closed → unsubscribe all store subscriptions → clear permission subscribers and the pending permission set → `transport.close()`; idempotent.
-- **in-process direct-call mechanism**: `createInProcessTransport(endpoint)` implements the acpjs HostClientTransport contract via direct function calls — `request` / `subscribe` / `respondInbound` forward straight to `@acpjs/core`'s `EnvelopeEndpoint` (provided by `createHostEndpoint(host)`), with no JSON serialization and no cross-process boundary. `connect` wires up inbound requests via `endpoint.onInboundRequest` and advances the lifecycle to `connected`; inbound requests (such as permissions) are handed to the client as-is. Payloads remain structured-clone safe (INV-3, asserted by end-to-end tests). After close, `request` responds with an `acpjs/transport-closed` error, `respondInbound` rejects, and `subscribe` throws an `AcpClientError` (surfacing misuse early); a repeated `connect` throws `acpjs/config-invalid`; `close` is idempotent and unsubscribes all active subscriptions. Reconnection is not part of the contract obligation; a new connection backfills state via `fromSeq`.
-- **listener-callback exceptions**: session-state listeners and permission listeners that throw are isolated (swallowed, without interrupting dispatch to the rest of the batch).
-- **diagnostics store**: `client.diagnostics` maintains a bounded log (most recent `MAX_DIAGNOSTICS = 200`; oldest evicted) of host-projected `diagnostic` events, surfacing agent stderr, spawn-failed, restart-scheduled (with backoff), and process-error. `getSnapshot` returns a frozen `readonly DiagnosticEvent[]` and `subscribe` notifies on each new event (no immediate callback). Diagnostic-listener exceptions are isolated like the other channels.
-- **connect failure**: every facade call rejects with the lifecycle error (or `acpjs/transport-closed`).
+- `sessionId` (readonly), `getSnapshot(): SessionState`, `subscribe((state) => …)`.
+- `onEvent((event) => …, options?): () => void` — independent read-only tap on the normalized stream; `{ fromSeq: 0 }` replays the full log then streams live; omit for live-only.
+- `prompt(ContentBlock[]): Promise<PromptFinishedPayload>`, `cancel()`, `close()`, `setMode(modeId)`, `setConfigOption(configId, value)`.
+
+## Key semantics
+
+- **No raw send.** No raw host-envelope send, no raw notification subscription, no store selector. For projections the single `SessionState` can't express, use `session.onEvent` (with `reduce`/`createInitialSessionState` re-exported for one-import projections).
+- **State construction**: transport delivers `AcpjsEvent` → `reduce` replays in `seq` order; duplicate `seq` ignored; late subscribers backfill via `fromSeq` to deeply equal state.
+- **`subscribe` never calls back immediately** — read the initial value via `getSnapshot`/`get`. Same for agents/sessions/status/permissions/diagnostics.
+- **Reactive mirror**: agent/session registries mirror the host stream — a session created by another endpoint appears via `session-updated`; a disposed agent leaves via `agent-removed`.
+- **Handle lifecycle**: a live session reuses one frozen handle across create/load/resume/attach; a `closed`/`deleted` handle is dropped, and a later reopen builds a new handle.
+- **Permissions**: sourced from host `permission-updated` projections; leaves the pending set on respond, `acpjs/already-answered`, or answered/superseded projection. Under multi-client race, `acpjs/already-answered` is the normal path — ignore it.
+- **Errors**: every error is `AcpClientError` (`ErrorObject` shape: `code` (`acpjs/*`), `message`, `data?`, `retryable`). Auth failures during create/load/resume/prompt reject with `acpjs/agent-error` and the original error in `data`.
+- **Slash commands**: no `invokeCommand` — invoke by writing a `/`-prefixed text block in the prompt: `session.prompt([{ type: 'text', text: '/web query' }])`.

@@ -1,270 +1,85 @@
 # @acpjs/protocol
 
-The foundation layer of acpjs: a normalized event model, the `SessionState`
-model, a pure `reduce` reducer, and acpjs host envelope types derived from
-Agent Client Protocol (ACP) traffic. This package does not define ACP wire
-messages; agent-facing protocol traffic stays owned by the official
-`@agentclientprotocol/sdk`.
+acpjs foundation: normalized `AcpjsEvent` model, `SessionState` model, pure `reduce` reducer, and acpjs host transport contract types. Types + pure functions only — no Node built-ins, type-only SDK dependency, runs unchanged in Node/browser/jsdom.
 
-This package is **types + pure functions only**. It is environment-neutral: it
-references no Node built-ins and has a type-only dependency on
-`@agentclientprotocol/sdk`, so it runs unchanged in Node, browsers, and jsdom.
-
-## Installation
+## Install
 
 ```sh
 pnpm add @acpjs/protocol
 ```
 
-ESM-only. Requires `node >= 24`.
+ESM-only, `node >= 24`.
 
-## Quick start
+## Usage
 
-`reduce(state, event)` is a pure function. Starting from
-`createInitialSessionState(sessionId)`, fold events in `seq` order; the same
-event sequence yields a field-for-field identical `SessionState` in any
-environment.
+`reduce(state, event)` is pure. Fold events in `seq` order from `createInitialSessionState(sessionId)`; identical sequences yield field-for-field identical state.
 
 ```ts
-import {
-  type AcpjsEvent,
-  createInitialSessionState,
-  reduce,
-} from '@acpjs/protocol'
+import { createInitialSessionState, reduce, type AcpjsEvent } from '@acpjs/protocol'
 
 const events: AcpjsEvent[] = [
-  {
-    sessionId: 'sess-1',
-    seq: 1,
-    ts: 0,
-    type: 'agent-message-chunk',
-    payload: { content: { type: 'text', text: 'Hel' }, messageId: 'm1' },
-  },
-  {
-    sessionId: 'sess-1',
-    seq: 2,
-    ts: 0,
-    type: 'agent-message-chunk',
-    payload: { content: { type: 'text', text: 'lo' }, messageId: 'm1' },
-  },
+  { sessionId: 's', seq: 1, ts: 0, type: 'agent-message-chunk', payload: { content: { type: 'text', text: 'Hel' }, messageId: 'm1' } },
+  { sessionId: 's', seq: 2, ts: 0, type: 'agent-message-chunk', payload: { content: { type: 'text', text: 'lo' }, messageId: 'm1' } },
 ]
 
-let state = createInitialSessionState('sess-1')
-for (const event of events) state = reduce(state, event)
-
-// state.messages === [
-//   {
-//     kind: 'agent',
-//     messageId: 'm1',
-//     content: [{ type: 'text', text: 'Hello' }],
-//     seq: 1,
-//   },
-// ]
+let state = createInitialSessionState('s')
+for (const e of events) state = reduce(state, e)
+// state.messages[0].content === [{ type: 'text', text: 'Hello' }]
 ```
 
-`reduce` never mutates its input; it returns a new `SessionState` (or the same
-reference unchanged for events it does not reduce).
+## Exports
 
-## Public API
+### Reducer & state
+
+- `createInitialSessionState(sessionId): SessionState`
+- `reduce(state, event): SessionState` — returns a new state (or same reference for events it does not reduce); never mutates input.
 
 ### Event model
 
-- `AcpjsEvent` — the acpjs-normalized projection-event union, equal to
-  `AcpjsSessionEvent | AcpjsHostEvent` (19 session events + 6 host events).
-  `AcpjsSessionEvent` maps stable ACP session updates into reducer-friendly
-  events; `AcpjsHostEvent` is acpjs host projection/telemetry.
-- Member interfaces, e.g. `UserMessageChunkEvent`, `AgentMessageChunkEvent`,
-  `AgentThoughtChunkEvent`, `ToolCallEvent`, `ToolCallUpdateEvent`, `PlanEvent`,
-  `AvailableCommandsUpdateEvent`, `CurrentModeUpdateEvent`,
-  `SessionConfigInitEvent`, `ConfigOptionsUpdateEvent`, `SessionInfoUpdateEvent`,
-  `UsageUpdateEvent`, `PromptFinishedEvent`, `SessionStatusChangeEvent`,
-  `SessionResetEvent`, `PermissionRequestCreatedEvent`,
-  `PermissionRequestResolvedEvent`, `TerminalOutputEvent`,
-  `UnrecognizedUpdateEvent`, `AgentUpdatedEvent`, `AgentRemovedEvent`,
-  `SessionUpdatedEvent`, `PermissionUpdatedEvent`, `InstallProgressEvent`,
-  `DiagnosticEvent`.
-- Payload types: `SessionConfigInitPayload`, `PromptFinishedPayload`,
-  `SessionStatusChangePayload`, `SessionResetPayload`,
-  `PermissionRequestCreatedPayload`, `PermissionRequestResolvedPayload`,
-  `HostPermissionSnapshot`, `TerminalOutputPayload`, `InstallProgressPayload`,
-  `DiagnosticPayload`, `UnrecognizedUpdatePayload`.
-- Enums and aliases: `SessionStatus`, `AgentStatus`, `AgentExitReason`,
-  `InstallStage`, `DiagnosticLevel`, `AcpjsEventExtensions`,
-  `AcpjsHostProjectionEvent`, `AcpjsHostTelemetryEvent`.
-
-Payloads reuse SDK protocol types. The top-level `_meta` field is removed at the
-type level (see implementation-defined notes); it surfaces on the envelope as
-`extensions` instead.
+- `AcpjsEvent` = `AcpjsSessionEvent | AcpjsHostEvent` (19 session + 6 host).
+- Session event members: `user-message-chunk`, `agent-message-chunk`, `agent-thought-chunk`, `tool-call`, `tool-call-update`, `plan`, `available-commands-update`, `current-mode-update`, `session-config-init`, `config-options-update`, `session-info-update`, `usage-update`, `prompt-finished`, `session-status-change`, `session-reset`, `permission-request-created`, `permission-request-resolved`, `terminal-output`, `unrecognized-update`.
+- Host projection members: `agent-updated`, `agent-removed`, `session-updated`, `permission-updated`. Host telemetry: `install-progress`, `diagnostic`.
+- Per-event interfaces (`*Event`), payload types (`*Payload`), and enums: `SessionStatus`, `AgentStatus`, `AgentExitReason`, `InstallStage`, `DiagnosticLevel`, `AcpjsEventExtensions`, `AcpjsHostProjectionEvent`, `AcpjsHostTelemetryEvent`.
 
 ### State model
 
-- `SessionState` — the derived per-session state.
-- Supporting types: `SessionMessage`, `MessageKind`, `ToolCallState`,
-  `TerminalOutputState`, `SessionUsageState`, `SessionConnectionState`,
-  `PendingPermissionRequest`, `ResolvedPermissionRequest`.
-- `createInitialSessionState(sessionId)` — builds the empty initial state.
-- `reduce(state, event)` — the pure reducer.
+- `SessionState`, `SessionMessage`, `MessageKind`, `ToolCallState`, `TerminalOutputState`, `SessionUsageState`, `SessionConnectionState`, `PendingPermissionRequest`, `ResolvedPermissionRequest`.
 
 ### Terminal output helper
 
-- `truncateUtf8Tail(output, limitBytes)` — trims a string to at most
-  `limitBytes` bytes from the **tail** along UTF-8 character boundaries,
-  returning `{ output, truncated }`. The reducer uses it to bound terminal
-  buffers; it is exported for callers that need the same byte-bounded, tail-
-  preserving truncation.
+- `truncateUtf8Tail(output, limitBytes): { output, truncated }` — tail-preserving UTF-8-byte-bounded truncation.
 
-### acpjs host envelopes
+### Host envelopes & error codes
 
-- `HostRequest`, `HostResponse`, `InboundRequest`, `InboundResponse`, `ErrorObject`.
-- `InboundRequest.kind` is an open string with one known member, `'permission'`
-  (typed as `'permission' | (string & {})`).
-- `ACPJS_ERROR_CODES` — frozen host-boundary sentinel codes in the `acpjs/*`
-  namespace
-  (8 codes: `config-invalid`, `prompt-in-flight`, `already-answered`,
-  `session-closed`, `agent-exited`, `capability-unsupported`, `agent-error`,
-  `transport-closed`), plus the `AcpjsErrorCode` type and the
-  `isAcpjsErrorCode(value)` guard.
+- `HostRequest`, `HostResponse`, `InboundRequest` (`kind: 'permission' | (string & {})`), `InboundResponse`, `ErrorObject`.
+- `ACPJS_ERROR_CODES` — frozen `acpjs/*` codes: `config-invalid`, `prompt-in-flight`, `already-answered`, `session-closed`, `agent-exited`, `capability-unsupported`, `agent-error`, `transport-closed`. Plus `AcpjsErrorCode`, `isAcpjsErrorCode(value)`.
 
-### acpjs host transport contract
+### Host transport contract
 
-- `HostClientTransport` — `connect(handlers)`, `request(request)`,
-  `subscribe(params, onEvent)`, `respondInbound(response)`, `close()`.
-- `HostClientTransportHandlers` — `onInboundRequest` + `onLifecycle` +
-  optional `onSubscriptionError(params, error)`.
-- `HostClientTransportLifecycleEvent` — `connecting → connected → closed`, with an
-  optional `error` on the terminating path.
-- `HostClientTransportSubscribeParams` — optional `sessionId` + required `fromSeq`.
-- `HostClientTransportConnectionStatus`, `HostClientTransportUnsubscribe`.
-- `EnvelopeEndpoint` — the host-side contract endpoint (request + event
-  subscription + reverse request + `respondInbound`), with no connection
-  lifecycle.
+- `HostClientTransport` — `connect(handlers)`, `request(request)`, `subscribe(params, onEvent)`, `respondInbound(response)`, `close()`.
+- `HostClientTransportHandlers` — `onInboundRequest`, `onLifecycle`, optional `onSubscriptionError(params, error)`.
+- `HostClientTransportLifecycleEvent` — `connecting → connected → closed` (optional terminal `error`).
+- `HostClientTransportSubscribeParams` — optional `sessionId`, required `fromSeq`.
+- `EnvelopeEndpoint` — host-side contract endpoint (no connection lifecycle).
 
-While `connected`, envelope delivery is order-preserving. Reconnection is not a
-transport obligation; a new connection backfills using `fromSeq`.
+### Host/client method contract
 
-### acpjs host/client method contract
+- `ACPJS_HOST_METHODS` — frozen acpjs control-plane method ids: `agents/spawn|list|dispose|authenticate|logout`, `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`. These are acpjs adapter ids, **not** ACP agent method names. Plus `AcpjsHostMethod`.
+- Payload shapes: `AgentDefinition`, `SessionConfigValue`, `CreateOrLoadSessionParams`, `ResumeSessionParams`, `CreateSessionResult`, `AgentCapabilitiesSnapshot`, `AgentSnapshot`, `SessionSnapshot`.
 
-Shared by `@acpjs/core` and `@acpjs/client` to avoid duplicated literals.
-These names are the acpjs control-plane contract between a host and a client;
-they are not ACP agent method names.
+### SDK protocol re-exports (type-only)
 
-- `ACPJS_HOST_METHODS` — frozen acpjs host method ids
-  (`agents/spawn|list|dispose`,
-  `sessions/create|load|list|resume|delete|prompt|cancel|close|setMode|setConfigOption|getAll|restore`),
-  pinned by tests, plus the `AcpjsHostMethod` type. `agents/dispose` carries
-  `disposeAgent(agentId)` across the envelope (the cross-process counterpart of
-  the host method / `client.agents.dispose`).
-- Shared payload shapes: `AgentDefinition`, `SessionConfigValue`,
-  `CreateOrLoadSessionParams`, `ResumeSessionParams`, `CreateSessionResult`,
-  `AgentCapabilitiesSnapshot`, `AgentSnapshot`, `SessionSnapshot`.
+`AgentCapabilities`, `AuthMethod`, `AvailableCommand`, `ContentBlock`, `Cost`, `ListSessionsResponse`, `McpServer`, `PermissionOption`, `Plan`, `RequestPermissionOutcome`, `SessionConfigOption`, `SessionModeState`, `StopReason`, `ToolCallContent`, `ToolCallLocation`, `ToolCallStatus`, `ToolKind`, `Usage`.
 
-### SDK protocol re-exports
+## Key semantics
 
-Type-only, for contract consumers: `AgentCapabilities`, `AuthMethod`,
-`AvailableCommand`, `ContentBlock`, `Cost`, `ListSessionsResponse`, `McpServer`,
-`PermissionOption`, `Plan`, `RequestPermissionOutcome`, `SessionConfigOption`,
-`SessionModeState`, `StopReason`, `ToolCallContent`, `ToolCallLocation`,
-`ToolCallStatus`, `ToolKind`, `Usage`. These cover every SDK-typed field that
-`SessionState` / `ToolCallState` expose, so integrators can type a reduced
-state entirely from `@acpjs/protocol` without reaching into
-`@agentclientprotocol/sdk` or hand-rolling parallel enums.
-
-## Event types (closed union)
-
-Session events carry `sessionId` and an in-session `seq`:
-`user-message-chunk`, `agent-message-chunk`, `agent-thought-chunk`,
-`tool-call`, `tool-call-update`, `plan`, `available-commands-update`,
-`current-mode-update`, `session-config-init`, `config-options-update`,
-`session-info-update`, `usage-update`, `prompt-finished`,
-`session-status-change`, `session-reset`, `permission-request-created`,
-`permission-request-resolved`, `terminal-output`, `unrecognized-update`.
-
-Host events carry a host-level `seq`. `AcpjsHostProjectionEvent` is the product
-state projection subset:
-
-- `agent-updated` — top-level `agentId`; payload is the full
-  `AgentSnapshot`.
-- `agent-removed` — `AgentRemovedEvent`, payload `{ agentId }`; emitted when
-  `disposeAgent` tears an agent down and removes it from the host registry
-  (distinct from an `exited` tombstone, which stays in the registry). Added as a
-  new union variant — a non-breaking addition, since consumers already tolerate
-  unknown/new variants.
-- `session-updated` — full `SessionSnapshot` session projection.
-- `permission-updated` — host-level permission pending/answered/superseded
-  projection.
-
-`AcpjsHostTelemetryEvent` is the non-state telemetry subset:
-
-- `install-progress` — top-level `agentId`.
-- `diagnostic` — `agentId` optional (registry-scope diagnostics have no owning
-  agent).
-
-## Implementation-defined notes
-
-- Event type names use kebab-case; the canonical name `unrecognized-update`
-  is preserved verbatim.
-- Payloads that reuse SDK protocol types are `Omit<…, '_meta'>`, enforcing at
-  the type level the rule that top-level `_meta` moves into the envelope's
-  `extensions`. Nested structures (e.g. `ContentBlock`, `PlanEntry`) keep their
-  native `_meta`.
-- `SessionState` is derived state; absent values are placed explicitly as `null`
-  (unlike the "omit absent keys" rule for events/protocol payloads), so cross-
-  environment deep equality is assertable.
-- Message chunk merging: when `messageId` is non-null, the reducer scans from the
-  tail for a message matching `(kind, messageId)` (same id is merged even across
-  intervening messages). When `messageId` is absent, a chunk merges only with the
-  immediately preceding message if it shares the same `kind` and also has no
-  `messageId`. Within a message, consecutive **plain text** blocks are coalesced
-  into one (`text` concatenated, no separator) so a streamed reply is a single
-  text block instead of one block per token. "Plain" means the text block carries
-  no `annotations` and no `_meta`; if either side carries those fields the blocks
-  are kept separate to avoid losing per-block metadata, and non-text blocks (e.g.
-  an image between two texts) always break a run.
-- `tool-call-update`: `null` and absent keys are both treated as "no change"
-  (core normalizes `null` away; the reducer handles it defensively).
-  `content`/`locations` are replaced wholesale. Updates to an unknown
-  `toolCallId` leave state unchanged.
-- `ToolCallState.extensions?: AcpjsEventExtensions` carries a tool call's
-  `_meta`/extensions through `reduce` verbatim (e.g.
-  `extensions._meta.subagent_session_info`); acpjs interprets no keys.
-- `session-info-update`: tri-state semantics follow the SDK — an absent key means
-  no change, an explicit `null` clears the field, a string replaces it.
-- `prompt-finished` does not change connection status (returning to `active` is
-  expressed separately by core via a `session-status-change` event). When
-  `usage` is absent, `lastTurnUsage` is cleared (it reflects only the most recent
-  turn). Core prompt-time agent protocol errors reject instead of fabricating a
-  `StopReason`.
-- `session-status-change`: the `resumed` flag is sticky until the next
-  `disconnected`/`closed`/`deleted`, which resets it.
-- `AgentCapabilitiesSnapshot` is an explicit stable ACP capability projection used
-  by acpjs. It mirrors the stable `auth` capability (`AgentAuthCapabilities`,
-  whose `logout` gates `host.logout`) but intentionally omits SDK
-  experimental/provider fields that are outside the acpjs product contract. The
-  agent's advertised auth methods are surfaced separately on the snapshot as
-  `AgentSnapshot.authMethods` (`AuthMethod[]`, the `initialize` response's
-  methods verbatim) — this is the data integrators read to choose a `methodId`
-  for the `authenticate` mechanism.
-- `current-mode-update` arriving before any mode state synthesizes
-  `{ currentModeId, availableModes: [] }`.
-- `diagnostic` agent attribution is expressed solely by the envelope `agentId`
-  (which may be absent — registry-scope diagnostics have no owning agent; the
-  payload does not duplicate it). The payload's `sessionId` provides session
-  context.
-- `InboundRequest.kind` is an open string with one known member, `'permission'`
-  (the only inbound request category today); new kinds may be added as they
-  stabilize.
-- The reducer returns the input state reference unchanged for
-  `unrecognized-update`, `diagnostic`, and all host events (they do not
-  participate in reduction and never throw).
-- The error-code namespace extends the base error codes with two
-  contract-level codes:
-  `acpjs/agent-error` (an agent-side JSON-RPC error tunneled across the
-  envelope, with the original error in `data`) and `acpjs/transport-closed` (a
-  call rejected after the transport closed; `retryable: true`).
-- Terminal accumulation cap: `reduce` enforces a hard **1 MiB** byte limit on a
-  single terminal's `output`. On overflow it discards from the oldest end (the
-  head of the string) along UTF-8 character boundaries via `truncateUtf8Tail`,
-  preserving the newest tail and setting `truncated: true`.
-- `resolvedPermissionRequests` cap: `reduce` keeps at most the **100** most
-  recent resolved-permission records (FIFO); on overflow it drops the oldest
-  entries.
+- Events use kebab-case `type`; payloads reuse SDK types as `Omit<…, '_meta'>` (top-level `_meta` moves to envelope `extensions`; nested `_meta` is preserved).
+- `SessionState` is derived; absent values are explicit `null` (enables cross-environment deep equality).
+- Message chunk merging: non-null `messageId` merges by `(kind, messageId)` scanning from the tail; null `messageId` merges only with an immediately preceding message of the same kind. Consecutive plain text blocks (no `annotations`/`_meta`) within a message coalesce into one.
+- `tool-call-update`: `null`/absent keys mean "no change"; `content`/`locations` replace wholesale; updates to an unknown `toolCallId` leave state unchanged.
+- `session-info-update`: absent key = no change, explicit `null` = clear, string = replace.
+- `prompt-finished`: does not change connection status; absent `usage` clears `lastTurnUsage`.
+- `session-status-change`: `resumed` flag is sticky until `disconnected`/`closed`/`deleted`.
+- Terminal accumulation cap: hard **1 MiB** per terminal; overflow discards from the head via `truncateUtf8Tail`, preserving the newest tail.
+- Resolved permissions cap: **100** most recent records (FIFO).
+- The reducer returns the same reference for `unrecognized-update`, `diagnostic`, and all host events.

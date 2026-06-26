@@ -1,23 +1,20 @@
 # @acpjs/react
 
-React hooks and Provider for acpjs, built on `@acpjs/client` (headless, environment-neutral, no state-library dependency, ships no UI components).
+React Provider + hooks for acpjs, built on `@acpjs/client`. Headless — no UI components, no state-library dependency. All reads go through `useSyncExternalStore`.
 
-## Installation
+## Install
 
 ```sh
 pnpm add @acpjs/react @acpjs/client
 ```
 
-ESM-only, requires `node >= 24`. React is a peer dependency (`react >= 19`). `@acpjs/client` is the runtime you wire into the Provider.
+ESM-only, `node >= 24`. Peer: `react >= 19`.
 
-## Minimal usage
-
-A `sessionId` comes from a session-creation flow (see [Creating a session](#creating-a-session)). Once `AcpProvider` injects the client, any component in the subtree can subscribe to that session with `useSession(sessionId)`.
+## Usage
 
 ```tsx
-import { AcpClientError } from '@acpjs/client'
 import { AcpProvider, usePermissionRequests, useSession } from '@acpjs/react'
-
+import { AcpClientError } from '@acpjs/client'
 import { client } from './acp-client.ts'
 
 function App({ sessionId }: { sessionId: string }) {
@@ -33,167 +30,52 @@ function Chat({ sessionId }: { sessionId: string }) {
   const permissions = usePermissionRequests()
   if (!session) return null
   return (
-    <div>
-      {session.state.messages.map((message, index) => (
-        <p key={index}>{JSON.stringify(message.content)}</p>
+    <>
+      {session.state.messages.map((m, i) => <p key={i}>{JSON.stringify(m.content)}</p>)}
+      <button onClick={() => void session.prompt([{ type: 'text', text: 'hi' }])}>Send</button>
+      {permissions.map((r) => (
+        <button key={r.requestId} onClick={() => void r.respond({ outcome: 'selected', optionId: r.options[0]?.optionId ?? '' }).catch((e) => { if (e instanceof AcpClientError && e.code === 'acpjs/already-answered') return; throw e })}>Allow</button>
       ))}
-      {permissions.map((request) => (
-        <button
-          key={request.requestId}
-          onClick={() =>
-            void request
-              .respond({
-                outcome: 'selected',
-                optionId: request.options[0]?.optionId ?? '',
-              })
-              .catch((error) => {
-                if (
-                  error instanceof AcpClientError &&
-                  error.code === 'acpjs/already-answered'
-                )
-                  return
-                throw error
-              })
-          }
-        >
-          Allow
-        </button>
-      ))}
-      <button
-        onClick={() => void session.prompt([{ type: 'text', text: 'hi' }])}
-      >
-        Send
-      </button>
-    </div>
+    </>
   )
 }
 ```
 
-Under multi-endpoint concurrency a permission request may be answered by another endpoint before your local `respond` lands. In that case `respond` rejects with `acpjs/already-answered`, which is a normal path (the list has already converged). Consumers should ignore that code and rethrow everything else.
+Create the client **once at module scope** (not in a component — StrictMode double-invokes component bodies). In renderer use `electronTransport()`; in-process use `createInProcessTransport(createHostEndpoint(host))`.
 
-## Where the client comes from
+## Exports
 
-The client injected into `AcpProvider` is created by `createAcpClient` from `@acpjs/client`. The transport depends on the runtime environment:
+Sealed surface (10 values, pinned by an API snapshot test):
 
-- **Browser / Electron renderer**: use `electronTransport()` from `@acpjs/electron/renderer` (pure `MessagePort`, environment-neutral; handshake details in the `@acpjs/electron` README).
-- **Node, same process**: use `createInProcessTransport(createHostEndpoint(host))` to connect directly to an in-process `AcpHost` (see the `@acpjs/client` / `@acpjs/core` READMEs).
-
-Create the client **once at module scope**, not inside a component. React StrictMode double-invokes component bodies, so creating the client inside a component would open duplicate connections. Put the client in its own module and export it:
-
-```ts
-// acp-client.ts (renderer / browser)
-import { createAcpClient } from '@acpjs/client'
-import { electronTransport } from '@acpjs/electron/renderer'
-
-export const client = createAcpClient({ transport: electronTransport() })
-```
-
-```ts
-// acp-client.ts (Node, same process)
-import { createAcpClient, createInProcessTransport } from '@acpjs/client'
-import { createAcpHost, createHostEndpoint } from '@acpjs/core'
-
-export const host = createAcpHost()
-export const client = createAcpClient({
-  transport: createInProcessTransport(createHostEndpoint(host)),
-})
-```
-
-Call `await client.dispose()` on application exit to close the transport. **The in-process case additionally needs `await host.dispose()`**: the host lifecycle is independent of the client, and `client.dispose()` only closes the transport — it does not dispose the host. Skipping `host.dispose()` leaks agent child processes (see the dispose chain in the `@acpjs/client` / `@acpjs/core` READMEs).
-
-## Creating a session
-
-Sessions are created from an agent handle. Take the `sessionId` from the returned `AcpSession` and feed it to `useSession`. `agent.sessions.create({ cwd, mcpServers, additionalDirectories })` resolves to an `AcpSession`; store `created.sessionId` in state. `useSession` subscribes through the session registry and converges from `undefined` to the live result once the handle appears.
-
-**Signature note**: `useSession(sessionId: string)` does not accept `undefined`. While no session exists yet, pass an empty string as a placeholder (`client.sessions.get('')` safely returns `undefined`), or conditionally render in the parent component.
-
-```tsx
-import { useState } from 'react'
-
-import { useSession } from '@acpjs/react'
-
-import type { AcpAgent } from '@acpjs/client'
-
-function NewSession({ agent }: { agent: AcpAgent }) {
-  const [sessionId, setSessionId] = useState('')
-  const session = useSession(sessionId)
-  return (
-    <div>
-      <button
-        onClick={async () => {
-          const created = await agent.sessions.create({
-            cwd: '/path/to/project',
-            mcpServers: [],
-            additionalDirectories: [],
-          })
-          setSessionId(created.sessionId)
-        }}
-      >
-        New session
-      </button>
-      {session ? <Chat sessionId={sessionId} /> : null}
-    </div>
-  )
-}
-```
-
-`cwd` is the session's working directory and should come from a project directory the user selects — a renderer has no `process.cwd()`, so it must be passed explicitly. If your `sessionId` is a nullable type, call `useSession(sessionId ?? '')` at the call site.
-
-## Public API (sealed surface)
-
-The export surface is exactly ten values (pinned by an API snapshot test): `AcpProvider`, `useAcpClient`, `useAgent`, `useAgents`, `useConnectionStatus`, `useDiagnostics`, `usePermissionRequests`, `useSession`, `useSessions`, and the `shallowEqual` helper. Every read hook accepts an optional pure-projection `(selector, isEqual?)` (see [Selecting a slice](#selecting-a-slice)), but there is still no raw subscription, no raw protocol-notification subscribe, no raw event/event-log handle, and no raw host-envelope send. A selector is a pure projection of already-public snapshot data — it is not an escape hatch.
-
-- `<AcpProvider client={client}>`: injects the `AcpClient` into the subtree. Using any hook outside the Provider throws a clear error pointing back to `AcpProvider`.
-- `useAcpClient(): AcpClient`: returns the client injected by the Provider.
-- `useAgent(agentId: string): AcpAgent | undefined`: `undefined` until the client knows that agent, then the stable handle reference. Changes in agent runtime state arrive through host `agent-updated` projections; read `status` / `reason?` / `exit?` / `restartCount` via `agent.getSnapshot()`.
-- `useAgents(): readonly AcpAgent[]`: enumerates the host-projected agent handles held by this client, updating reactively on spawn / attach and on external host `agent-updated` projections. Good for rendering an agent picker or sidebar.
-- `useSessions(): readonly AcpSession[]`: enumerates the host-projected session handles held by this client, updating reactively on create / load / resume / attach and on external host `session-updated` projections. A session created by Node/main before a renderer mounts appears after the client connects and replays the host stream. Good for rendering a session-list sidebar.
-- `useConnectionStatus(): ConnectionStatusSnapshot`: the transport connection status (`connecting` / `connected` / `closed`, with an optional `error`). Good for rendering a connection banner or offline notice.
-- `useSession(sessionId: string): UseSessionResult | undefined`: `undefined` while the client does not yet know the session; once known, returns `{ sessionId, state, prompt, cancel, close, setMode, setConfigOption }`, where `state` is the `SessionState` from `@acpjs/protocol`.
-- `usePermissionRequests(): readonly PermissionRequest[]`: the list of pending permission requests across all sessions. Each element carries `respond(outcome)`; the list converges after a `respond` (local or from another endpoint).
-- `useDiagnostics(): readonly DiagnosticEvent[]`: the diagnostic event log across all agents — surfacing agent `stderr`, `spawn-failed`, `restart-scheduled` (with backoff), `process-error`, and similar conditions. Each `DiagnosticEvent` carries `seq` / `ts` / `payload.level` (`info` / `warn` / `error`) / `payload.code` / `payload.message` plus optional `agentId` and `payload.sessionId`. The underlying buffer is bounded (oldest entries are evicted past the cap). Good for rendering a diagnostics panel or surfacing agent failures.
-- `shallowEqual(a, b): boolean`: a one-level structural comparison (objects compared by own-key set + `Object.is` per value; arrays by index + length). Pair it with a derived/composite selector so a fresh-but-shallow-equal projection does not re-render (see below).
+- `<AcpProvider client={client}>` — injects the client. Using any hook outside throws.
+- `useAcpClient(): AcpClient`
+- `useAgent(agentId): AcpAgent | undefined`
+- `useAgents(): readonly AcpAgent[]`
+- `useSessions(): readonly AcpSession[]`
+- `useSession(sessionId): UseSessionResult | undefined` — returns `{ sessionId, state, prompt, cancel, close, setMode, setConfigOption }`; `undefined` until the client knows the session.
+- `useConnectionStatus(): ConnectionStatusSnapshot`
+- `usePermissionRequests(): readonly PermissionRequest[]`
+- `useDiagnostics(): readonly DiagnosticEvent[]`
+- `shallowEqual(a, b): boolean` — one-level structural compare for derived selectors.
+- Types: `AcpProviderProps`, `UseSessionResult`. Re-exported: `SessionState`, `AgentSnapshot`, `SessionSnapshot`, `ConnectionStatusSnapshot`, `PermissionRequest`, `DiagnosticEvent`.
 
 ## Selecting a slice
 
-Every read hook — `useAgents`, `useSessions`, `useConnectionStatus`, `usePermissionRequests`, `useDiagnostics`, `useAgent`, `useSession` — accepts an optional `(selector, isEqual?)`. With no selector the hook returns the full snapshot. With a selector the hook returns the projection and re-renders only when the projected value changes by the equality function.
+Every read hook accepts an optional `(selector, isEqual?)`. No selector → full snapshot. Default equality is `Object.is`; selector identity need not be stable (inline arrow is safe).
 
-- `useAgents`, `useSessions`, `useConnectionStatus`, `usePermissionRequests`, `useDiagnostics` project their snapshot directly into the hook's return value.
-- `useAgent(agentId, selector?)`'s selector projects the agent **snapshot** (`AgentSnapshot | undefined`). With no selector the hook still returns the `AcpAgent` handle.
-- `useSession(sessionId, selector?)`'s selector projects the `SessionState`; the projection becomes the `.state` field of the returned `UseSessionResult` (the action methods are unchanged). The hook is still `undefined` until the session is known, and the selector never runs over a missing state.
-
-Default equality is `Object.is`. Selecting a whole top-level slice or a bare primitive needs no `isEqual`. Selector identity does not need to be stable — an inline arrow is safe; the underlying React shim (`useSyncExternalStoreWithSelector`) re-derives on selector-identity change but returns the previous reference when the equality function holds, so there is no infinite render loop and no need to `useMemo` the selector.
-
-**Structural sharing means whole-slice selection is free.** The session reducer rebuilds only the slice an event touches and carries every sibling slice by reference via `...state`, so top-level `SessionState` slices (`messages`, `toolCalls`, `plan`, `connection`, `terminals`, …) are reference-stable across unrelated updates. `useSession('s', s => s.toolCalls)` therefore re-renders only when tool calls change — no `isEqual` required.
-
-**Pass `shallowEqual` the moment a selector composes or derives.** A selector that builds a fresh object (`s => ({ status: s.connection.status, plan: s.plan })`) or derives via `filter` / `map` / `Object.values` / `Object.entries` / `Object.keys` / `slice` returns a brand-new reference every call, so the default `Object.is` treats every render as a change. Pass `shallowEqual` (exported from `@acpjs/react`) as the second argument to suppress re-renders when the projection is shallow-equal.
+- Whole top-level `SessionState` slices (`messages`, `toolCalls`, `plan`, `connection`, …) are reference-stable across unrelated updates (structural sharing) — selecting one needs no `isEqual`.
+- Pass `shallowEqual` the moment a selector derives/composes (`s => ({ … })`, `filter`/`map`/`Object.values`/`slice`):
 
 ```ts
-// primitive / whole-slice — Object.is is enough
-const status = useConnectionStatus((s) => s.status)
-const toolCalls = useSession('s', (s) => s.toolCalls)?.state
-
-// derived array — needs shallowEqual
-import { shallowEqual } from '@acpjs/react'
-
-const agentMsgs = useSession(
-  's',
-  (s) => s.messages.filter((m) => m.kind === 'agent'),
-  shallowEqual,
-)?.state
+const toolCalls = useSession('s', (s) => s.toolCalls)?.state // whole slice — Object.is is enough
+const agentMsgs = useSession('s', (s) => s.messages.filter((m) => m.kind === 'agent'), shallowEqual)?.state // derived — needs shallowEqual
 ```
 
-## Behavioral guarantees
+## Key semantics
 
-- Every subscription goes through `useSyncExternalStore` onto a client store. Under StrictMode double-invocation and concurrent features (`startTransition`) there is no tearing and no duplicate subscription (pinned by tests).
-- Reference stability: with no new event, a re-render returns the same object reference. Snapshots reuse the client store's cached immutable references directly, so multiple hooks observing the same session get a reference-equal `state`.
-- Unmount unsubscribes from all store subscriptions.
-- A `usePermissionRequests` element's `respond` may reject with `acpjs/already-answered` under a multi-endpoint race (another endpoint already answered and the list has converged). Consumers must catch and ignore that code.
-- Auth/login is not modeled by acpjs. Agent-side authentication failures during create/load/resume/prompt surface as agent errors. Configure or log in to the local agent outside acpjs and retry.
-
-## Implementation-defined decisions
-
-- **`useSession` result shape**: a single `useMemo`-cached result object. `SessionState` (or, with a selector, the projected value) is nested under `.state`, and the methods reuse the stable function references from the session handle.
-- **Unknown ids**: `useSession` / `useAgent` return `undefined` for an id the client does not yet hold. The value appears automatically through a registry subscription once the host publishes the matching `session-updated` / `agent-updated` projection.
-- **Missing Provider**: throws a plain `Error` (message contains `AcpProvider`), not an `AcpClientError` — this is a usage error, not a protocol failure.
-- **No SSR support**: no `getServerSnapshot` is provided; the hooks target client rendering only. The dist entry already carries a `'use client'` directive (see the build config). Under the Next.js App Router you still must place components that use the hooks (including `AcpProvider`) in a `'use client'` module, otherwise you hit an RSC error or `useSyncExternalStore`'s `Missing getServerSnapshot`.
+- No tearing, no duplicate subscription under StrictMode/`startTransition`; unmount unsubscribes; references stable when nothing changes.
+- `useSession(sessionId)` does not accept `undefined` — pass `''` as a placeholder while no session exists (`client.sessions.get('')` returns `undefined`), or conditionally render.
+- `useAgent`/`useSession` return `undefined` for unknown ids, then converge automatically via host projections.
+- Missing Provider throws a plain `Error` (not `AcpClientError`) — a usage error.
+- No SSR: no `getServerSnapshot`. Under Next.js App Router, components using hooks (including `AcpProvider`) must be in a `'use client'` module.
+- Auth is not modeled; agent-side auth failures surface as agent errors.
