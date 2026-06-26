@@ -28,7 +28,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.29.0"
+    "@agentclientprotocol/sdk": "^1.0.0"
   },
   "devDependencies": {
     "jsdom": "^29.1.1"
