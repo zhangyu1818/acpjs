@@ -1,6 +1,6 @@
 {
   "name": "@acpjs/electron",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "acpjs Electron bridge: main host adapter, preload handshake surface, renderer transport (three entries).",
   "license": "MIT",
   "repository": {
